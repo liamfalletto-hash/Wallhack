@@ -21,3 +21,6 @@ Thumbs.db
 # Arduino / PlatformIO
 .pio/
 build/
+
+# Private instructions for Claude (kept local)
+CLAUDE.md
