@@ -1,0 +1,27 @@
+{
+  "v": 1,
+  "name": "demo_flat",
+  "units": "m",
+  "bounds": {"xmin": 0, "ymin": 0, "xmax": 8, "ymax": 5},
+  "walls": [
+    {"a": [0, 0], "b": [8, 0], "material": "brick"},
+    {"a": [8, 0], "b": [8, 5], "material": "brick"},
+    {"a": [8, 5], "b": [0, 5], "material": "brick"},
+    {"a": [0, 5], "b": [0, 0], "material": "brick"},
+    {"a": [4, 0], "b": [4, 2], "material": "drywall"},
+    {"a": [4, 2.9], "b": [4, 5], "material": "drywall"}
+  ],
+  "doors": [
+    {"a": [4, 2], "b": [4, 2.9]}
+  ],
+  "obstacles": [
+    {"name": "bed", "polygon": [[0, 3.0], [2.0, 3.0], [2.0, 5], [0, 5]]},
+    {"name": "desk", "polygon": [[2.9, 0], [3.9, 0], [3.9, 0.7], [2.9, 0.7]]},
+    {"name": "sofa", "polygon": [[5.0, 4.1], [7.2, 4.1], [7.2, 5], [5.0, 5]]},
+    {"name": "table", "polygon": [[5.6, 1.4], [6.6, 1.4], [6.6, 2.4], [5.6, 2.4]]}
+  ],
+  "rooms": [
+    {"name": "bedroom", "polygon": [[0, 0], [4, 0], [4, 5], [0, 5]]},
+    {"name": "living", "polygon": [[4, 0], [8, 0], [8, 5], [4, 5]]}
+  ]
+}
