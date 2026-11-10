@@ -30,6 +30,15 @@ H = np.hstack([np.eye(2), np.zeros((2, 2))])
 
 
 @dataclass(frozen=True)
+class Params:
+    accel_std_mps2: float = ACCEL_STD_MPS2
+    max_coast_confirmed_s: float = MAX_COAST_CONFIRMED_S
+
+
+DEFAULT_PARAMS = Params()
+
+
+@dataclass(frozen=True)
 class Detection:
     z: np.ndarray  # (2,) world position
     R: np.ndarray  # (2, 2) world covariance
@@ -78,9 +87,11 @@ def detections_from_frame(frame: dict) -> list[Detection]:
     return [Detection(z, rot @ _sensor_cov(x, y) @ rot.T) for z, x, y in zip(world, xs, ys, strict=True)]
 
 
-def step(state: TrackerState, detections: Sequence[Detection], t: float) -> TrackerState:
+def step(
+    state: TrackerState, detections: Sequence[Detection], t: float, params: Params = DEFAULT_PARAMS
+) -> TrackerState:
     dt = 0.0 if state.t is None else t - state.t
-    tracks = [_predict(tr, dt) for tr in state.tracks]
+    tracks = [_predict(tr, dt, params.accel_std_mps2) for tr in state.tracks]
 
     matched: dict[int, int] = {}
     if tracks and detections:
@@ -96,7 +107,7 @@ def step(state: TrackerState, detections: Sequence[Detection], t: float) -> Trac
             tr = _update(tr, detections[matched[i]], t)
         hits = (*tr.hits, hit)[-CONFIRM_WINDOW:]
         tr = replace(tr, hits=hits, confirmed=tr.confirmed or sum(hits) >= CONFIRM_HITS)
-        max_coast = MAX_COAST_CONFIRMED_S if tr.confirmed else MAX_COAST_TENTATIVE_S
+        max_coast = params.max_coast_confirmed_s if tr.confirmed else MAX_COAST_TENTATIVE_S
         if t - tr.last_update_t <= max_coast:
             updated.append(tr)
 
@@ -117,12 +128,12 @@ def _sensor_cov(x: float, y: float) -> np.ndarray:
     return J @ np.diag([RANGE_STD_M**2, ANGLE_STD_RAD**2]) @ J.T
 
 
-def _predict(tr: Track, dt: float) -> Track:
+def _predict(tr: Track, dt: float, accel_std: float) -> Track:
     if dt <= 0:
         return tr
     F = np.eye(4)
     F[0, 2] = F[1, 3] = dt
-    q = np.array([[dt**4 / 4, dt**3 / 2], [dt**3 / 2, dt**2]]) * ACCEL_STD_MPS2**2
+    q = np.array([[dt**4 / 4, dt**3 / 2], [dt**3 / 2, dt**2]]) * accel_std**2
     Q = np.zeros((4, 4))
     Q[np.ix_([0, 2], [0, 2])] = q
     Q[np.ix_([1, 3], [1, 3])] = q

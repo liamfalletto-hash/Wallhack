@@ -61,6 +61,8 @@ def test_event_stream_sends_frames_in_order_with_world_targets(server):
     events = [json.loads(line[6:]) for line in body.splitlines() if line.startswith('data: {"')]
     assert [e["i"] for e in events] == list(range(5, 31))
     assert all(len(e["world"]) == len(e["targets"]) for e in events)
+    assert any(e["tracks"] for e in events)
+    assert all(len(t["path"]) == len(viewer.FORECAST_STEPS_S) for e in events for t in e["tracks"])
     assert body.rstrip().endswith("event: end\ndata: {}")
 
 

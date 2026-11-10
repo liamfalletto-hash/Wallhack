@@ -11,11 +11,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from host import tracker
 from host.geometry import frame_targets_world
 
 STATIC_DIR = Path(__file__).parent / "static"
 DEFAULT_PORT = 8000
 MAX_SPEED = 64.0
+FORECAST_STEPS_S = (0.5, 1.0, 1.5, 2.0)  # points on the drawn predicted path
+COASTING_S = 0.3  # a track not updated for longer is drawn as predicted-only
 
 
 def load_session(path: Path) -> tuple[dict, list[dict]]:
@@ -28,11 +31,33 @@ def load_session(path: Path) -> tuple[dict, list[dict]]:
     return lines[0], frames
 
 
-def with_world_targets(frame: dict, index: int) -> dict:
-    return {**frame, "i": index, "world": frame_targets_world(frame).round(3).tolist()}
+def track_overlays(frames: list[dict]) -> list[list[dict]]:
+    # Tracking is cheap (about 1 s per 10 minutes), so run it once up front; seeking stays consistent.
+    state, out = tracker.TrackerState(), []
+    for f in frames:
+        state = tracker.step(state, tracker.detections_from_frame(f), f["t_dev"])
+        out.append(
+            [
+                {
+                    "id": tr.id,
+                    "x": round(float(tr.pos[0]), 3),
+                    "y": round(float(tr.pos[1]), 3),
+                    "coasting": f["t_dev"] - tr.last_update_t > COASTING_S,
+                    "path": [tracker.forecast(tr, h).round(3).tolist() for h in FORECAST_STEPS_S],
+                }
+                for tr in state.confirmed
+            ]
+        )
+    return out
 
 
-def make_handler(map_json: bytes, header: dict, frames: list[dict]) -> type[BaseHTTPRequestHandler]:
+def with_world_targets(frame: dict, index: int, tracks: list[dict]) -> dict:
+    return {**frame, "i": index, "world": frame_targets_world(frame).round(3).tolist(), "tracks": tracks}
+
+
+def make_handler(
+    map_json: bytes, header: dict, frames: list[dict], overlays: list[list[dict]]
+) -> type[BaseHTTPRequestHandler]:
     session = json.dumps({"header": header, "n": len(frames), "t0": frames[0]["t_dev"]}).encode()
 
     class Handler(BaseHTTPRequestHandler):
@@ -73,7 +98,7 @@ def make_handler(map_json: bytes, header: dict, frames: list[dict]) -> type[Base
                     delay = (frames[i]["t_dev"] - t0) / speed - (time.monotonic() - wall0)
                     if delay > 0:
                         time.sleep(delay)
-                    self.wfile.write(f"data: {json.dumps(with_world_targets(frames[i], i))}\n\n".encode())
+                    self.wfile.write(f"data: {json.dumps(with_world_targets(frames[i], i, overlays[i]))}\n\n".encode())
                     self.wfile.flush()
                 self.wfile.write(b"event: end\ndata: {}\n\n")
                 self.wfile.flush()
@@ -91,7 +116,8 @@ def serve(session_path: Path, port: int = DEFAULT_PORT, map_path: Path | None = 
     map_path = map_path or Path(header.get("map") or "")
     if not map_path.is_file():
         raise ValueError(f"floor plan {str(map_path)!r} not found; pass --map")
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(map_path.read_bytes(), header, frames))
+    handler = make_handler(map_path.read_bytes(), header, frames, track_overlays(frames))
+    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     server.daemon_threads = True
     return server
 
