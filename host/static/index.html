@@ -9,14 +9,14 @@
     --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7;
     --wall: #1d1d1f; --furniture: #e3e3e0; --room: #ffffff; --fov: rgba(0, 113, 227, 0.08);
     --ring: rgba(0, 113, 227, 0.25); --helmet: #0071e3; --target: 220, 38, 38; --truth: #8e8e93;
-    --still: rgba(217, 119, 6, 0.35); --moving: rgba(220, 38, 38, 0.18); --track: #0071e3;
+    --still: rgba(217, 119, 6, 0.35); --moving: rgba(220, 38, 38, 0.18); --track: #0071e3; --track-turn: #8e44ad; --track-still: #0f9d8a;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #111113; --panel: #1c1c1e; --text: #f2f2f7; --muted: #98989f; --line: #38383a;
       --wall: #e5e5ea; --furniture: #2c2c2e; --room: #18181a; --fov: rgba(10, 132, 255, 0.12);
       --ring: rgba(10, 132, 255, 0.3); --helmet: #0a84ff; --target: 255, 69, 58; --truth: #8e8e93;
-      --still: rgba(255, 159, 10, 0.4); --moving: rgba(255, 69, 58, 0.2); --track: #0a84ff;
+      --still: rgba(255, 159, 10, 0.4); --moving: rgba(255, 69, 58, 0.2); --track: #0a84ff; --track-turn: #bf5af2; --track-still: #30d1b8;
     }
   }
   * { box-sizing: border-box; }
@@ -114,10 +114,13 @@ function draw() {
   drawTracks(v);
 }
 
+const MODE_COLOR = { walking: "--track", manoeuvring: "--track-turn", still: "--track-still" };
+
 function drawTracks(v) {
-  const color = css("--track");
-  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
   (frame.tracks || []).forEach(t => {
+    const color = css(MODE_COLOR[t.mode] || "--track");
+    ctx.strokeStyle = color; ctx.fillStyle = color;
     const [x, y] = v.px(t.x, t.y);
     ctx.lineWidth = 1.5; ctx.setLineDash([2, 5]);
     ctx.beginPath(); ctx.moveTo(x, y); t.path.forEach(p => ctx.lineTo(...v.px(...p))); ctx.stroke();
@@ -125,7 +128,7 @@ function drawTracks(v) {
     ctx.beginPath(); ctx.arc(x, y, BODY_R_M * v.s, 0, 2 * Math.PI); ctx.stroke();
     ctx.setLineDash([]);
     ctx.font = "600 12px -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillText(`#${t.id}`, x + BODY_R_M * v.s + 4, y);
+    ctx.fillText(t.mode ? `#${t.id} ${t.mode}` : `#${t.id}`, x + BODY_R_M * v.s + 4, y);
   });
 }
 

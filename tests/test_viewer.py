@@ -63,6 +63,7 @@ def test_event_stream_sends_frames_in_order_with_world_targets(server):
     assert all(len(e["world"]) == len(e["targets"]) for e in events)
     assert any(e["tracks"] for e in events)
     assert all(len(t["path"]) == len(viewer.FORECAST_STEPS_S) for e in events for t in e["tracks"])
+    assert {t["mode"] for e in events for t in e["tracks"]} <= {"walking", "manoeuvring", "still"}
     assert body.rstrip().endswith("event: end\ndata: {}")
 
 

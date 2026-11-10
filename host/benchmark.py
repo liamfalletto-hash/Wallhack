@@ -1,6 +1,6 @@
 """1-second forecast-error benchmark on simulated recordings.
 
-    python -m host.benchmark              # evaluate every tracker model on the fixed test seeds
+    python -m host.benchmark              # evaluate every tracker in TRACKERS on the fixed test seeds
     python -m host.benchmark --tune       # grid-search cv tracker params on separate tuning seeds
     python -m host.benchmark data/a.jsonl # evaluate on recordings that contain ground truth
 
@@ -40,6 +40,11 @@ N_PEOPLE = 2
 DURATION_S = 300.0
 TUNE_ACCEL_STD_MPS2 = (0.5, 1.0, 2.0, 4.0)
 TUNE_MAX_COAST_S = (1.0, 2.0, 3.0)
+TRACKERS = {
+    "cv": tracker.Params(model="cv"),
+    "imm": tracker.Params(model="imm"),
+    "imm + LD2410": tracker.Params(model="imm", use_presence=True),
+}
 COVERAGE_SLACK = 0.02  # tuning may not buy lower error with more than this coverage loss
 WALKING_MPS = 0.1
 
@@ -73,7 +78,9 @@ def evaluate(frames: list[dict], params: tracker.Params = tracker.DEFAULT_PARAMS
     kalman, static, walking = [], [], []
     covered = visible = false_tracks = track_frames = 0
     for k, f in enumerate(frames):
-        state = tracker.step(state, tracker.detections_from_frame(f), f["t_dev"], params)
+        state = tracker.step(
+            state, tracker.detections_from_frame(f), f["t_dev"], params, tracker.presence_from_frame(f)
+        )
         tracks = state.confirmed
         pose = radar.Pose(f["truth"]["pose"]["x"], f["truth"]["pose"]["y"], f["truth"]["pose"]["yaw"])
         for pos in truth[k].values():
@@ -160,9 +167,9 @@ def main(argv: list[str] | None = None) -> None:
         sessions = simulated_sessions(TEST_SEEDS)
         label = f"test seeds {TEST_SEEDS.start}-{TEST_SEEDS.stop - 1}, {N_PEOPLE} people, {DURATION_S:g} s each"
     print(f"1-second forecast error, {label}")
-    for model in tracker.MODELS:
-        print(f"\n== tracker: {model}")
-        print(report(combine([evaluate(s, tracker.Params(model=model)) for s in sessions])))
+    for name, params in TRACKERS.items():
+        print(f"\n== tracker: {name}")
+        print(report(combine([evaluate(s, params) for s in sessions])))
 
 
 if __name__ == "__main__":

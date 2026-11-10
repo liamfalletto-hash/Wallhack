@@ -14,6 +14,7 @@ Test set: simulated, seeds 0–4, 2 people, 300 s each, `maps/demo_flat.json`, h
 | 2026-11-10 | No motion (reference) | 0.529 / 1.228 m | 0.998 / 1.412 m | 0.258 / 0.564 m | 94.8% | 16.9% |
 | 2026-11-10 | Constant-velocity Kalman (σa = 1.0, coast 3 s) | **0.599 / 1.278 m** | 0.781 / 1.422 m | 0.494 / 1.126 m | 94.8% | 16.9% |
 | 2026-11-10 | IMM: walking / manoeuvring / still, misses as evidence (untuned) | **0.393 / 0.981 m** | 0.752 / 1.398 m | 0.206 / 0.447 m | 97.0% | 10.6% |
+| 2026-11-10 | IMM + LD2410 still/moving readings (untuned) | **0.380 / 0.958 m** | 0.747 / 1.372 m | 0.201 / 0.450 m | 98.1% | 11.6% |
 
 **Reading:** the Kalman forecast beats "no motion" for walking people (0.78 vs 1.00 m)
 but loses for still people (0.49 vs 0.26 m): noise in its velocity estimate is
@@ -30,3 +31,11 @@ for the same reason. Parameters are starting values, not tuned; tuning waits for
 sensor data. Known limitation: a stopped person who is still detected every frame is
 read as "walking at ~0 m/s", so velocity noise still leaks into the forecast; LD2410
 still readings are the planned fix.
+
+**IMM + LD2410 (2026-11-10):** a modest further gain, 0.393 → 0.380 m mean and coverage
+97.0 → 98.1%, with false tracks slightly up (10.6 → 11.6%) because range-only readings
+keep quiet tracks alive longer. Each reading supports at most one track (the LD2410
+reports only the nearest still and nearest moving person); an earlier version that let a
+reading support every track at that distance raised false tracks to 12.8%. The forecast
+counts rise because more seated people stay tracked. Gains on real hardware depend on how
+well the LD2410 sees still people through walls, which is unmeasured.

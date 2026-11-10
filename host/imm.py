@@ -73,6 +73,11 @@ def miss(s: IMMState) -> IMMState:
     return IMMState(s.x, s.P, _normalise(np.log(1 - DETECTION_P) + np.log(s.mu)))
 
 
+def reweight(s: IMMState, likelihood: np.ndarray) -> IMMState:
+    """Fold in per-mode evidence from another sensor (e.g. the LD2410)."""
+    return IMMState(s.x, s.P, _normalise(np.log(likelihood) + np.log(s.mu)))
+
+
 def combine(s: IMMState) -> tuple[np.ndarray, np.ndarray]:
     x = s.mu @ s.x
     d = s.x - x
