@@ -3,115 +3,136 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Wallhack Tactical View</title>
+<title>Wallhack Console</title>
 <style>
   :root {
-    --bg: #04070a; --panel: rgba(6, 14, 12, 0.82); --edge: rgba(61, 255, 138, 0.28);
-    --green: #3dff8a; --green-dim: rgba(61, 255, 138, 0.45); --green-faint: rgba(61, 255, 138, 0.10);
-    --grid-minor: rgba(61, 255, 138, 0.045); --grid-major: rgba(61, 255, 138, 0.10);
-    --amber: #ffb000; --cyan: #3ee6ff; --red: #ff3b3b; --muted: #6f8f80; --truth: rgba(200, 210, 205, 0.45);
-    --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --bg: #0f1114; --surface: #15181c; --surface-2: #1b1f24; --line: #262b32; --line-strong: #353b44;
+    --text: #d9dde3; --text-2: #8b939e; --text-3: #5d6570;
+    --wall: #c3c9d1; --furniture: #2a3038; --grid: #1a1e23;
+    --fov: 96, 139, 176; --track: #e8ebef; --hit: 155, 163, 173;
+    --ok: #4caf7a; --warn: #d9a441; --bad: #d9534f; --still: #7fb0d9; --turn: #d9a441;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+    --mono: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--green); font: 12px/1.4 var(--mono);
-    letter-spacing: 0.04em; text-transform: uppercase; }
-  body { display: flex; flex-direction: column; overflow: hidden; }
-  main { position: relative; flex: 1; min-height: 0; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.45 var(--sans); }
+  body { display: grid; grid-template-rows: auto 1fr auto; height: 100%; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 16px; padding: 8px 16px; background: var(--surface);
+    border-bottom: 1px solid var(--line); white-space: nowrap; overflow-x: auto; }
+  header .name { font-weight: 600; letter-spacing: 0.01em; }
+  header .sep { width: 1px; height: 18px; background: var(--line-strong); }
+  .kv { color: var(--text-2); }
+  .kv b { color: var(--text); font: 500 12px var(--mono); font-variant-numeric: tabular-nums; margin-left: 6px; }
+  .chips { display: flex; gap: 8px; margin-left: auto; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--line-strong);
+    border-radius: 3px; color: var(--text-2); font-size: 12px; }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+  .chip.ok::before { background: var(--ok); } .chip.warn::before { background: var(--warn); }
+  .chip.bad::before { background: var(--bad); }
+  .mode-badge { padding: 1px 6px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line-strong);
+    font: 600 11px var(--mono); color: var(--text-2); }
+  main { display: grid; grid-template-columns: 1fr 330px; min-height: 0; }
+  .map { position: relative; min-width: 0; min-height: 0; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-  /* Scanlines and vignette sit above the map but never take clicks. */
-  main::after { content: ""; position: absolute; inset: 0; pointer-events: none;
-    background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px),
-      radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.55) 100%); }
-  .frame-corner { position: absolute; width: 22px; height: 22px; border: 0 solid var(--green-dim); pointer-events: none; }
-  .tl { top: 10px; left: 10px; border-top-width: 2px; border-left-width: 2px; }
-  .tr { top: 10px; right: 10px; border-top-width: 2px; border-right-width: 2px; }
-  .bl { bottom: 10px; left: 10px; border-bottom-width: 2px; border-left-width: 2px; }
-  .br { bottom: 10px; right: 10px; border-bottom-width: 2px; border-right-width: 2px; }
-  .hud { position: absolute; z-index: 1; padding: 10px 12px; background: var(--panel); border: 1px solid var(--edge);
-    min-width: 200px; backdrop-filter: blur(2px); }
-  .hud.left { top: 18px; left: 18px; }
-  .hud.right { top: 18px; right: 18px; text-align: right; }
-  .hud h1 { margin: 0 0 6px; font-size: 13px; font-weight: 700; letter-spacing: 0.18em; color: var(--green);
-    text-shadow: 0 0 8px rgba(61, 255, 138, 0.6); }
-  .hud .row { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); }
-  .hud .row b { color: var(--green); font-weight: 600; font-variant-numeric: tabular-nums; }
-  .warn { color: var(--amber) !important; }
-  .alert { color: var(--red) !important; }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; padding-top: 6px;
-    border-top: 1px solid var(--edge); color: var(--muted); }
-  .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 4px; vertical-align: middle; }
-  .blink { animation: blink 1.2s steps(2, start) infinite; }
-  @keyframes blink { to { visibility: hidden; } }
-  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 16px;
-    background: #050b09; border-top: 1px solid var(--edge); }
-  button, select { font: inherit; text-transform: uppercase; letter-spacing: 0.08em; color: var(--green);
-    background: transparent; border: 1px solid var(--green-dim); padding: 5px 12px; cursor: pointer; }
-  button:hover, select:hover { background: var(--green-faint); }
-  select option { background: #050b09; }
-  input[type=range] { flex: 1; min-width: 120px; accent-color: var(--green); }
-  label { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
-  input[type=checkbox] { accent-color: var(--green); }
-  .stat { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .stat b { color: var(--green); font-weight: 600; }
-  @media (max-width: 640px) {
-    .hud { min-width: 0; padding: 6px 8px; font-size: 10px; }
-    .hud.right { top: auto; bottom: 18px; }
+  aside { background: var(--surface); border-left: 1px solid var(--line); overflow-y: auto; }
+  aside h2 { margin: 0; padding: 10px 14px; font-size: 12px; font-weight: 600; color: var(--text-2);
+    border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; }
+  table { width: 100%; border-collapse: collapse; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+  th { text-align: left; font: 500 11px var(--sans); color: var(--text-3); padding: 6px 10px 4px; white-space: nowrap; }
+  td { padding: 5px 10px; border-top: 1px solid var(--line); color: var(--text); white-space: nowrap; }
+  th:first-child, td:first-child { padding-left: 14px; }
+  td.dim { color: var(--text-2); }
+  .state { display: inline-flex; align-items: center; gap: 6px; font-family: var(--sans); }
+  .state i { width: 8px; height: 8px; border-radius: 50%; }
+  .empty { padding: 14px; color: var(--text-3); }
+  .legend { padding: 12px 14px; border-top: 1px solid var(--line); color: var(--text-2); display: grid; gap: 6px; }
+  .legend span { display: flex; align-items: center; gap: 8px; }
+  .legend svg { flex: none; }
+  footer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 16px; background: var(--surface);
+    border-top: 1px solid var(--line); }
+  button, select { font: 500 12px var(--sans); color: var(--text); background: var(--surface-2);
+    border: 1px solid var(--line-strong); border-radius: 3px; padding: 4px 10px; cursor: pointer; }
+  button:hover, select:hover { border-color: var(--text-3); }
+  input[type=range] { flex: 1; min-width: 120px; accent-color: var(--text-2); }
+  label { display: flex; align-items: center; gap: 6px; color: var(--text-2); cursor: pointer; }
+  footer .kv b { font-size: 12px; }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+    aside { border-left: 0; border-top: 1px solid var(--line); max-height: 34vh; }
     .legend { display: none; }
+    header { gap: 6px 10px; flex-wrap: wrap; }
+    header .sep { display: none; }
+    .chips { margin-left: 0; }
   }
 </style>
 </head>
 <body>
+<header>
+  <span class="name">Wallhack</span>
+  <span class="mode-badge" id="mode">REPLAY</span>
+  <span class="sep"></span>
+  <span class="kv">Source<b id="src">—</b></span>
+  <span class="kv">Time<b id="time">00:00:00.0</b></span>
+  <span class="kv">Heading<b id="heading">—</b></span>
+  <div class="chips">
+    <span class="chip" id="chip-radar">LD2450</span>
+    <span class="chip" id="chip-presence">LD2410</span>
+    <span class="chip" id="chip-imu">IMU</span>
+  </div>
+</header>
 <main>
-  <canvas id="map"></canvas>
-  <div class="frame-corner tl"></div><div class="frame-corner tr"></div>
-  <div class="frame-corner bl"></div><div class="frame-corner br"></div>
-  <section class="hud left">
-    <h1>WALLHACK // TAC VIEW</h1>
-    <div class="row">Mode <b id="mode">REPLAY</b></div>
-    <div class="row">Source <b id="src">—</b></div>
-    <div class="row">Mission time <b id="time">T+00:00.0</b></div>
+  <div class="map"><canvas id="map"></canvas></div>
+  <aside>
+    <h2><span>Tracks</span><span id="ntracks">0</span></h2>
+    <table>
+      <thead><tr><th>ID</th><th>State</th><th>Range</th><th>Speed</th><th>Last seen</th></tr></thead>
+      <tbody id="tracks"></tbody>
+    </table>
+    <div class="empty" id="no-tracks">No confirmed tracks</div>
     <div class="legend">
-      <span><i style="background:var(--green)"></i>Walking</span>
-      <span><i style="background:var(--amber)"></i>Turning</span>
-      <span><i style="background:var(--cyan)"></i>Still</span>
-      <span><i style="background:var(--red)"></i>Radar hit</span>
+      <span><svg width="14" height="14"><circle cx="7" cy="7" r="4" fill="#e8ebef"/></svg>Track (moving)</span>
+      <span><svg width="14" height="14"><rect x="3" y="3" width="8" height="8" fill="#7fb0d9"/></svg>Track (still)</span>
+      <span><svg width="14" height="14"><circle cx="7" cy="7" r="4" fill="none" stroke="#e8ebef" stroke-dasharray="2 2"/></svg>Not currently detected</span>
+      <span><svg width="14" height="14"><rect x="4" y="4" width="6" height="6" fill="none" stroke="#9ba3ad"/></svg>Radar detection</span>
+      <span><svg width="14" height="14"><path d="M1 12 A 11 11 0 0 1 12 1" fill="none" stroke="#d9a441"/></svg>LD2410 still-person range</span>
+      <span id="legend-truth"><svg width="14" height="14"><circle cx="7" cy="7" r="5" fill="none" stroke="#5d6570" stroke-dasharray="1 2"/></svg>Ground truth (simulation)</span>
     </div>
-  </section>
-  <section class="hud right">
-    <div class="row">Radar hits <b id="count">0</b></div>
-    <div class="row">Tracks <b id="ntracks">0</b></div>
-    <div class="row">LD2410 <b id="presence">—</b></div>
-    <div class="row">Heading <b id="imu">—</b></div>
-  </section>
+  </aside>
 </main>
-<div class="bar">
-  <button id="play">❚❚ Hold</button>
+<footer>
+  <button id="play">Pause</button>
   <select id="speed" aria-label="Playback speed">
     <option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
   </select>
   <input id="seek" type="range" min="0" value="0" aria-label="Timeline">
-  <span class="stat" id="frameno">FRM <b>0</b></span>
+  <span class="kv">Frame<b id="frameno">0</b></span>
   <label><input id="truth" type="checkbox" checked> Ground truth</label>
-</div>
+</footer>
 <script>
-const FADE_S = 1.0;                 // radar hits fade out over this long
-const RANGE_M = 6, HALF_FOV = Math.PI / 3, RINGS_M = [2, 4, 6], BEARING_TICK = Math.PI / 12;
-const MARGIN_M = 1.0, BODY_R_M = 0.25, GATE_M = 0.75;
-const SWEEP_PERIOD_S = 3.0;         // decorative: the LD2450 does not physically sweep
-const MODE = { walking: ["--green", "WALK"], manoeuvring: ["--amber", "TURN"], still: ["--cyan", "STILL"] };
+const FADE_S = 1.0;            // radar detections fade out over this long
+const HISTORY_S = 4.0;         // track history trail length
+const LEADER_S = 1.0;          // velocity leader shows where the track is in this many seconds
+const RANGE_M = 6, HALF_FOV = Math.PI / 3, RINGS_M = [2, 4, 6];
+const MARGIN_M = 0.8, GATE_M = 0.75;
+const STATE = { walking: ["Moving", "--track"], manoeuvring: ["Turning", "--turn"], still: ["Still", "--still"] };
 
 const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
-const ui = Object.fromEntries(["play", "speed", "seek", "time", "count", "ntracks", "presence", "imu", "truth",
-  "mode", "src", "frameno"].map(id => [id, document.getElementById(id)]));
+const $ = id => document.getElementById(id);
+const ui = Object.fromEntries(["play", "speed", "seek", "time", "heading", "src", "mode", "frameno", "truth",
+  "ntracks", "tracks", "no-tracks", "chip-radar", "chip-presence", "chip-imu", "legend-truth"].map(id => [id, $(id)]));
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-const FONT = `11px ${css("--mono")}`, FONT_BOLD = `600 11px ${css("--mono")}`;
+const C = {};
+["--wall", "--furniture", "--grid", "--fov", "--track", "--hit", "--still", "--turn", "--warn", "--text-2", "--text-3",
+  "--surface"].forEach(k => { C[k] = css(k); });
+const FONT = `11px ${css("--mono")}`, FONT_SANS = `500 11px ${css("--sans")}`;
 
-let plan, session, frame = null, trail = [], es = null, playing = true, colors = {};
+let plan, session, frame = null, hits = [], history = new Map(), es = null, playing = true;
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = canvas.clientWidth * dpr; canvas.height = canvas.clientHeight * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
 }
 
 function view() {
@@ -119,7 +140,7 @@ function view() {
   const bw = b.xmax - b.xmin + 2 * MARGIN_M, bh = b.ymax - b.ymin + 2 * MARGIN_M;
   const s = Math.min(w / bw, h / bh);
   const ox = (w - bw * s) / 2 - (b.xmin - MARGIN_M) * s, oy = (h + bh * s) / 2 + (b.ymin - MARGIN_M) * s;
-  return { s, px: (x, y) => [ox + x * s, oy - y * s], ox, oy };
+  return { s, px: (x, y) => [ox + x * s, oy - y * s] };
 }
 
 function poly(v, pts) {
@@ -128,25 +149,19 @@ function poly(v, pts) {
   ctx.closePath();
 }
 
-function line(v, a, b) { ctx.beginPath(); ctx.moveTo(...v.px(...a)); ctx.lineTo(...v.px(...b)); ctx.stroke(); }
+function seg(v, a, b) { ctx.beginPath(); ctx.moveTo(...v.px(...a)); ctx.lineTo(...v.px(...b)); ctx.stroke(); }
 
-function draw(now) {
+function draw() {
   ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
   if (!plan) return;
   const v = view();
   drawGrid(v);
-
-  ctx.fillStyle = "rgba(61, 255, 138, 0.025)";
-  (plan.rooms || []).forEach(r => { poly(v, r.polygon); ctx.fill(); });
-  (plan.obstacles || []).forEach(o => drawHatched(v, o.polygon));
-
-  if (frame) drawSensor(v, now);
-
-  ctx.save();
-  ctx.strokeStyle = colors.green; ctx.shadowColor = colors.green; ctx.shadowBlur = 8; ctx.lineCap = "square";
-  plan.walls.forEach(w => { ctx.lineWidth = ["brick", "concrete"].includes(w.material) ? 3 : 1.6; line(v, w.a, w.b); });
-  ctx.restore();
-
+  ctx.fillStyle = C["--furniture"];
+  (plan.obstacles || []).forEach(o => { poly(v, o.polygon); ctx.fill(); });
+  if (frame) drawSensor(v);
+  ctx.strokeStyle = C["--wall"]; ctx.lineCap = "square";
+  plan.walls.forEach(w => { ctx.lineWidth = ["brick", "concrete"].includes(w.material) ? 3 : 1.5; seg(v, w.a, w.b); });
+  drawScale(v);
   if (!frame) return;
   if (ui.truth.checked && frame.truth) drawTruth(v);
   drawHits(v);
@@ -155,159 +170,148 @@ function draw(now) {
 }
 
 function drawGrid(v) {
-  const b = plan.bounds, x0 = Math.floor(b.xmin - MARGIN_M), x1 = Math.ceil(b.xmax + MARGIN_M);
-  const y0 = Math.floor(b.ymin - MARGIN_M), y1 = Math.ceil(b.ymax + MARGIN_M);
-  ctx.lineWidth = 1;
-  for (let g = x0; g <= x1; g += 0.5) {
-    ctx.strokeStyle = Number.isInteger(g) ? colors.gridMajor : colors.gridMinor; line(v, [g, y0], [g, y1]);
-  }
-  for (let g = y0; g <= y1; g += 0.5) {
-    ctx.strokeStyle = Number.isInteger(g) ? colors.gridMajor : colors.gridMinor; line(v, [x0, g], [x1, g]);
-  }
-  ctx.fillStyle = colors.muted; ctx.font = FONT; ctx.textAlign = "center"; ctx.textBaseline = "top";
-  for (let g = Math.ceil(b.xmin); g <= b.xmax; g++) { const [x, y] = v.px(g, y0); ctx.fillText(`${g}M`, x, y - 16); }
+  const b = plan.bounds;
+  ctx.strokeStyle = C["--grid"]; ctx.lineWidth = 1;
+  for (let x = Math.ceil(b.xmin - MARGIN_M); x <= b.xmax + MARGIN_M; x++) seg(v, [x, b.ymin - MARGIN_M], [x, b.ymax + MARGIN_M]);
+  for (let y = Math.ceil(b.ymin - MARGIN_M); y <= b.ymax + MARGIN_M; y++) seg(v, [b.xmin - MARGIN_M, y], [b.xmax + MARGIN_M, y]);
 }
 
-function drawHatched(v, pts) {
-  ctx.save(); poly(v, pts); ctx.clip();
-  const xs = pts.map(p => v.px(...p)[0]), ys = pts.map(p => v.px(...p)[1]);
-  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-  ctx.strokeStyle = colors.greenFaint; ctx.lineWidth = 1;
-  for (let k = x0 - (y1 - y0); k < x1; k += 7) { ctx.beginPath(); ctx.moveTo(k, y1); ctx.lineTo(k + (y1 - y0), y0); ctx.stroke(); }
-  ctx.restore();
-  ctx.strokeStyle = colors.greenDim; ctx.setLineDash([3, 3]); poly(v, pts); ctx.stroke(); ctx.setLineDash([]);
+function drawScale(v) {
+  const x0 = 16, y0 = canvas.clientHeight - 18, len = v.s;
+  ctx.strokeStyle = C["--text-2"]; ctx.fillStyle = C["--text-2"]; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x0, y0 - 4); ctx.lineTo(x0, y0); ctx.lineTo(x0 + len, y0); ctx.lineTo(x0 + len, y0 - 4); ctx.stroke();
+  ctx.font = FONT; ctx.textAlign = "left"; ctx.textBaseline = "bottom"; ctx.fillText("1 m", x0 + len + 6, y0 + 4);
 }
 
-function sector(hx, hy, r) { ctx.arc(hx, hy, r, -(frame.yaw ?? 0) - HALF_FOV, -(frame.yaw ?? 0) + HALF_FOV); }
+function arc(hx, hy, r) {
+  const yaw = frame.yaw ?? 0;
+  ctx.arc(hx, hy, r, -yaw - HALF_FOV, -yaw + HALF_FOV);
+}
 
-function drawSensor(v, now) {
+function drawSensor(v) {
   const pose = frame.pose || { x: 0, y: 0 }, yaw = frame.yaw ?? 0, [hx, hy] = v.px(pose.x, pose.y);
-  const R = RANGE_M * v.s;
-
-  const grad = ctx.createRadialGradient(hx, hy, 0, hx, hy, R);
-  grad.addColorStop(0, "rgba(61, 255, 138, 0.10)"); grad.addColorStop(1, "rgba(61, 255, 138, 0.02)");
-  ctx.fillStyle = grad; ctx.beginPath(); ctx.moveTo(hx, hy); sector(hx, hy, R); ctx.closePath(); ctx.fill();
-
-  ctx.strokeStyle = colors.greenDim; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(hx, hy); sector(hx, hy, R); ctx.closePath(); ctx.stroke();
-  ctx.setLineDash([2, 6]);
-  RINGS_M.slice(0, -1).forEach(r => { ctx.beginPath(); sector(hx, hy, r * v.s); ctx.stroke(); });
+  ctx.fillStyle = `rgba(${C["--fov"]}, 0.06)`; ctx.strokeStyle = `rgba(${C["--fov"]}, 0.45)`; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(hx, hy); arc(hx, hy, RANGE_M * v.s); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = `rgba(${C["--fov"]}, 0.25)`; ctx.setLineDash([3, 4]);
+  RINGS_M.slice(0, -1).forEach(r => { ctx.beginPath(); arc(hx, hy, r * v.s); ctx.stroke(); });
   ctx.setLineDash([]);
-
-  ctx.fillStyle = colors.green; ctx.font = FONT; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillStyle = `rgba(${C["--fov"]}, 0.8)`; ctx.font = FONT; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   RINGS_M.forEach(r => {
-    const a = yaw - HALF_FOV;
-    ctx.fillText(`${r}M`, hx + r * v.s * Math.cos(a) + 4, hy - r * v.s * Math.sin(a) + 8);
+    const a = yaw + HALF_FOV + 0.06;
+    ctx.fillText(`${r} m`, hx + r * v.s * Math.cos(a), hy - r * v.s * Math.sin(a));
   });
-  ctx.textAlign = "center";
-  for (let a = -HALF_FOV; a <= HALF_FOV + 1e-9; a += BEARING_TICK) {
-    const ang = yaw + a, c = Math.cos(ang), s = Math.sin(ang), major = Math.abs(a % (Math.PI / 6)) < 1e-6;
-    ctx.beginPath(); ctx.moveTo(hx + R * c, hy - R * s); ctx.lineTo(hx + (R + (major ? 8 : 4)) * c, hy - (R + (major ? 8 : 4)) * s);
-    ctx.stroke();
-    if (major) ctx.fillText(`${Math.round(-a * 180 / Math.PI)}°`, hx + (R + 18) * c, hy - (R + 18) * s);
-  }
-
-  const phase = (now / 1000 / SWEEP_PERIOD_S) % 2, u = phase < 1 ? phase : 2 - phase;
-  const sweep = yaw - HALF_FOV + 2 * HALF_FOV * u, dir = phase < 1 ? -1 : 1;
-  for (let k = 0; k < 12; k++) {
-    const a = sweep + dir * k * 0.02;
-    if (a < yaw - HALF_FOV || a > yaw + HALF_FOV) continue;
-    ctx.strokeStyle = `rgba(61, 255, 138, ${0.35 * (1 - k / 12)})`;
-    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + R * Math.cos(a), hy - R * Math.sin(a)); ctx.stroke();
-  }
-
   const pr = frame.presence;
-  if (pr) [["moving_m", colors.red], ["still_m", colors.amber]].forEach(([key, color]) => {
+  if (pr) [["still_m", C["--warn"]], ["moving_m", C["--text-2"]]].forEach(([key, color]) => {
     if (pr[key] == null) return;
-    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.globalAlpha = 0.8;
-    [-GATE_M / 2, GATE_M / 2].forEach(d => { ctx.beginPath(); sector(hx, hy, (pr[key] + d) * v.s); ctx.stroke(); });
-    ctx.globalAlpha = 0.08; ctx.lineWidth = GATE_M * v.s; ctx.beginPath(); sector(hx, hy, pr[key] * v.s); ctx.stroke();
-    ctx.globalAlpha = 1;
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash(key === "moving_m" ? [4, 3] : []);
+    ctx.beginPath(); arc(hx, hy, pr[key] * v.s); ctx.stroke();
+    ctx.setLineDash([]);
   });
 }
 
 function drawOperator(v) {
   const pose = frame.pose || { x: 0, y: 0 }, yaw = frame.yaw ?? 0, [hx, hy] = v.px(pose.x, pose.y);
   ctx.save(); ctx.translate(hx, hy); ctx.rotate(-yaw);
-  ctx.strokeStyle = colors.green; ctx.fillStyle = colors.bg; ctx.lineWidth = 1.5;
-  ctx.shadowColor = colors.green; ctx.shadowBlur = 10;
-  ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(-7, 7); ctx.lineTo(-3, 0); ctx.lineTo(-7, -7); ctx.closePath();
-  ctx.fill(); ctx.stroke(); ctx.restore();
-  ctx.fillStyle = colors.green; ctx.font = FONT_BOLD; ctx.textAlign = "center"; ctx.textBaseline = "top";
-  ctx.fillText("OP", hx, hy + 12);
+  ctx.fillStyle = `rgb(${C["--fov"]})`; ctx.strokeStyle = C["--surface"]; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-6, 6); ctx.lineTo(-6, -6); ctx.closePath(); ctx.stroke(); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = C["--text-2"]; ctx.font = FONT_SANS; ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillText("Sensor", hx, hy + 10);
 }
 
 function drawTruth(v) {
-  ctx.strokeStyle = colors.truth; ctx.fillStyle = colors.truth; ctx.lineWidth = 1; ctx.setLineDash([1, 3]);
+  ctx.strokeStyle = C["--text-3"]; ctx.fillStyle = C["--text-3"]; ctx.lineWidth = 1; ctx.setLineDash([1, 3]);
   ctx.font = FONT; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
   frame.truth.people.forEach(p => {
-    const [x, y] = v.px(p.x, p.y);
-    ctx.beginPath(); ctx.arc(x, y, BODY_R_M * v.s, 0, 2 * Math.PI); ctx.stroke();
-    ctx.fillText(`GT${p.id}`, x, y - BODY_R_M * v.s - 3);
+    const [x, y] = v.px(p.x, p.y), r = 0.25 * v.s;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.stroke();
+    ctx.fillText(`GT${p.id}`, x, y - r - 2);
   });
   ctx.setLineDash([]);
 }
 
 function drawHits(v) {
-  trail.forEach(d => {
-    const age = frame.t_dev - d.t, [x, y] = v.px(d.x, d.y), a = Math.max(0, 1 - age / FADE_S), r = age === 0 ? 5 : 3;
-    ctx.strokeStyle = `rgba(255, 59, 59, ${a})`; ctx.lineWidth = age === 0 ? 1.6 : 1;
-    ctx.beginPath(); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r); ctx.stroke();
+  hits.forEach(d => {
+    const age = frame.t_dev - d.t, [x, y] = v.px(d.x, d.y), a = Math.max(0, 1 - age / FADE_S);
+    ctx.strokeStyle = `rgba(${C["--hit"]}, ${0.9 * a})`; ctx.lineWidth = 1;
+    ctx.strokeRect(x - 3, y - 3, 6, 6);
   });
 }
 
+function stateOf(t) { return STATE[t.mode] || ["Tracked", "--track"]; }
+
 function drawTracks(v) {
-  const pose = frame.pose || { x: 0, y: 0 };
   (frame.tracks || []).forEach(t => {
-    const [colorVar, tag] = MODE[t.mode] || ["--green", "TRK"], color = css(colorVar);
-    const [x, y] = v.px(t.x, t.y), h = BODY_R_M * v.s + 4, k = Math.max(5, h * 0.45);
-    ctx.strokeStyle = color; ctx.fillStyle = color;
-
-    ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
-    ctx.beginPath(); ctx.moveTo(x, y); t.path.forEach(p => ctx.lineTo(...v.px(...p))); ctx.stroke();
-    ctx.setLineDash([]);
-    t.path.forEach(p => { const [px, py] = v.px(...p); ctx.fillRect(px - 1.5, py - 1.5, 3, 3); });
-
-    ctx.save(); ctx.lineWidth = 1.6; ctx.shadowColor = color; ctx.shadowBlur = t.coasting ? 0 : 8;
-    if (t.coasting) ctx.setLineDash([3, 3]);
-    [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy]) => {
-      ctx.beginPath(); ctx.moveTo(x + sx * h, y + sy * (h - k)); ctx.lineTo(x + sx * h, y + sy * h);
-      ctx.lineTo(x + sx * (h - k), y + sy * h); ctx.stroke();
+    const color = C[stateOf(t)[1]], [x, y] = v.px(t.x, t.y);
+    ctx.fillStyle = color; ctx.strokeStyle = color;
+    (history.get(t.id) || []).forEach(([hx, hy], k, arr) => {
+      const [px, py] = v.px(hx, hy);
+      ctx.globalAlpha = 0.15 + 0.45 * (k / arr.length); ctx.fillRect(px - 1, py - 1, 2, 2);
     });
-    ctx.restore();
-    ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
-
-    const one = t.path[1] || [t.x, t.y], speed = Math.hypot(one[0] - t.x, one[1] - t.y);
-    const range = Math.hypot(t.x - pose.x, t.y - pose.y);
-    // Put the label on the side the target is not heading to, and keep it on screen.
-    const [ex] = v.px(...one), LABEL_W = 130;
-    const left = (ex - x > 2 || x + h + LABEL_W > canvas.clientWidth) && x - h - LABEL_W > 0;
-    const lx = left ? x - h - 6 : x + h + 6;
-    ctx.font = FONT_BOLD; ctx.textAlign = left ? "right" : "left"; ctx.textBaseline = "alphabetic";
-    ctx.fillText(`TGT-${String(t.id).padStart(2, "0")} ${t.coasting ? "LOST" : tag}`, lx, y - 2);
-    ctx.font = FONT; ctx.globalAlpha = 0.75;
-    ctx.fillText(`${range.toFixed(1)}M  ${speed.toFixed(1)}M/S`, lx, y + 11);
     ctx.globalAlpha = 1;
+    const lead = t.path[1] || [t.x, t.y], [lx, ly] = v.px(...lead);
+    ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(lx, ly); ctx.stroke();
+
+    ctx.lineWidth = 1.5; ctx.setLineDash(t.coasting ? [2, 2] : []);
+    ctx.beginPath();
+    if (t.mode === "still") ctx.rect(x - 5, y - 5, 10, 10); else ctx.arc(x, y, 5, 0, 2 * Math.PI);
+    t.coasting ? ctx.stroke() : ctx.fill();
+    ctx.setLineDash([]);
+
+    const left = lx - x > 2 && x - 60 > 0;
+    ctx.font = FONT; ctx.textAlign = left ? "right" : "left"; ctx.textBaseline = "middle"; ctx.fillStyle = C["--track"];
+    ctx.fillText(`T${t.id}`, left ? x - 10 : x + 10, y - 7);
   });
+}
+
+function updateHistory(f) {
+  const live = new Set(f.tracks.map(t => t.id));
+  for (const id of history.keys()) if (!live.has(id)) history.delete(id);
+  f.tracks.forEach(t => {
+    const h = history.get(t.id) || [];
+    h.push([t.x, t.y, f.t_dev]);
+    while (h.length && f.t_dev - h[0][2] > HISTORY_S) h.shift();
+    history.set(t.id, h);
+  });
+}
+
+function fmtTime(t) {
+  const h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, s = (t % 60).toFixed(1).padStart(4, "0");
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${s}`;
+}
+
+function setChip(el, cls, title) { el.className = `chip ${cls}`; el.title = title; }
+
+function updatePanel(f) {
+  const pose = f.pose || { x: 0, y: 0 };
+  const rows = f.tracks.map(t => {
+    const [label, colorVar] = stateOf(t), lead = t.path[1] || [t.x, t.y];
+    const speed = Math.hypot(lead[0] - t.x, lead[1] - t.y), range = Math.hypot(t.x - pose.x, t.y - pose.y);
+    const seen = t.coasting ? "lost" : "now";
+    return `<tr><td>T${t.id}</td><td><span class="state"><i style="background:var(${colorVar})"></i>${label}</span></td>` +
+      `<td>${range.toFixed(1)} m</td><td>${speed.toFixed(1)} m/s</td><td class="dim">${seen}</td></tr>`;
+  });
+  ui.tracks.innerHTML = rows.join("");
+  ui["no-tracks"].style.display = rows.length ? "none" : "block";
+  ui.ntracks.textContent = f.tracks.length;
 }
 
 function onFrame(f) {
   frame = f;
-  f.world.forEach(([x, y]) => trail.push({ x, y, t: f.t_dev }));
-  trail = trail.filter(d => f.t_dev - d.t < FADE_S && d.t <= f.t_dev);
+  f.world.forEach(([x, y]) => hits.push({ x, y, t: f.t_dev }));
+  hits = hits.filter(d => f.t_dev - d.t < FADE_S && d.t <= f.t_dev);
+  updateHistory(f);
   ui.seek.value = f.i;
-  const t = f.t_dev - session.t0, m = Math.floor(t / 60), s = (t % 60).toFixed(1).padStart(4, "0");
-  ui.time.textContent = `T+${String(m).padStart(2, "0")}:${s}`;
-  ui.frameno.innerHTML = `FRM <b>${String(f.i).padStart(5, "0")}</b>`;
-  ui.count.textContent = f.targets.length;
-  ui.ntracks.textContent = f.tracks.length;
+  ui.time.textContent = fmtTime(f.t_dev - session.t0);
+  ui.frameno.textContent = f.i;
+  ui.heading.textContent = f.yaw == null ? "—" :
+    `${String(Math.round(((90 - f.yaw * 180 / Math.PI) % 360 + 360) % 360)).padStart(3, "0")}°`;
+  setChip(ui["chip-radar"], f.targets.length ? "ok" : "", `${f.targets.length} detection(s) this frame`);
   const pr = f.presence;
-  ui.presence.textContent = !pr ? "OFFLINE" : pr.state === "none" ? "CLEAR" :
-    [pr.moving_m != null && `MOV ${pr.moving_m.toFixed(1)}M`, pr.still_m != null && `STILL ${pr.still_m.toFixed(1)}M`]
-      .filter(Boolean).join(" · ");
-  ui.presence.className = !pr ? "warn" : "";
-  ui.imu.textContent = f.yaw == null ? "NO IMU" : `${String(Math.round(((90 - f.yaw * 180 / Math.PI) % 360 + 360) % 360)).padStart(3, "0")}°`;
-  ui.imu.className = f.yaw == null ? "alert blink" : "";
+  setChip(ui["chip-presence"], pr ? "ok" : "warn", pr ? `state: ${pr.state}` : "no LD2410 data");
+  setChip(ui["chip-imu"], f.yaw == null ? "bad" : "ok", f.yaw == null ? "no heading: IMU missing" : "heading OK");
+  updatePanel(f);
+  draw();
 }
 
 function stream(start) {
@@ -317,7 +321,7 @@ function stream(start) {
   es.addEventListener("end", () => { es.close(); setPlaying(false); });
 }
 
-function setPlaying(p) { playing = p; ui.play.textContent = p ? "❚❚ Hold" : "▶ Run"; }
+function setPlaying(p) { playing = p; ui.play.textContent = p ? "Pause" : "Play"; }
 
 ui.play.onclick = () => {
   if (playing) { es && es.close(); setPlaying(false); return; }
@@ -326,22 +330,17 @@ ui.play.onclick = () => {
   stream(next >= session.n ? 0 : next);
 };
 ui.speed.onchange = () => { if (playing && frame) stream(frame.i + 1); };
-ui.seek.oninput = () => { trail = []; stream(Number(ui.seek.value)); };
+ui.seek.oninput = () => { hits = []; history = new Map(); stream(Number(ui.seek.value)); };
+ui.truth.onchange = draw;
 window.addEventListener("resize", resize);
 
-function loop(now) { draw(now); requestAnimationFrame(loop); }
-
-colors = {
-  green: css("--green"), greenDim: css("--green-dim"), greenFaint: css("--green-faint"), amber: css("--amber"),
-  red: css("--red"), muted: css("--muted"), truth: css("--truth"), bg: css("--bg"),
-  gridMinor: css("--grid-minor"), gridMajor: css("--grid-major"),
-};
-resize();
 Promise.all([fetch("/map").then(r => r.json()), fetch("/session").then(r => r.json())]).then(([m, s]) => {
   plan = m; session = s; ui.seek.max = s.n - 1;
-  ui.src.textContent = s.header.src === "sim" ? "SIMULATION" : s.header.src.toUpperCase();
-  ui.truth.parentElement.style.display = s.header.src === "sim" ? "flex" : "none";
-  stream(0); requestAnimationFrame(loop);
+  const sim = s.header.src === "sim";
+  ui.src.textContent = sim ? "Simulation" : s.header.src;
+  ui.truth.parentElement.style.display = sim ? "flex" : "none";
+  ui["legend-truth"].style.display = sim ? "flex" : "none";
+  resize(); stream(0);
 });
 </script>
 </body>
