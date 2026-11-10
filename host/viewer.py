@@ -19,6 +19,7 @@ DEFAULT_PORT = 8000
 MAX_SPEED = 64.0
 FORECAST_STEPS_S = (0.5, 1.0, 1.5, 2.0)  # points on the drawn predicted path
 COASTING_S = 0.3  # a track not updated for longer is drawn as predicted-only
+VIEWER_PARAMS = tracker.Params(model="imm")  # best tracker in docs/benchmarks.md
 
 
 def load_session(path: Path) -> tuple[dict, list[dict]]:
@@ -35,7 +36,7 @@ def track_overlays(frames: list[dict]) -> list[list[dict]]:
     # Tracking is cheap (about 1 s per 10 minutes), so run it once up front; seeking stays consistent.
     state, out = tracker.TrackerState(), []
     for f in frames:
-        state = tracker.step(state, tracker.detections_from_frame(f), f["t_dev"])
+        state = tracker.step(state, tracker.detections_from_frame(f), f["t_dev"], VIEWER_PARAMS)
         out.append(
             [
                 {

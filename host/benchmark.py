@@ -1,7 +1,7 @@
 """1-second forecast-error benchmark on simulated recordings.
 
-    python -m host.benchmark              # evaluate on the fixed test seeds
-    python -m host.benchmark --tune       # grid-search tracker params on separate tuning seeds
+    python -m host.benchmark              # evaluate every tracker model on the fixed test seeds
+    python -m host.benchmark --tune       # grid-search cv tracker params on separate tuning seeds
     python -m host.benchmark data/a.jsonl # evaluate on recordings that contain ground truth
 
 Rules, kept fixed so results stay comparable:
@@ -15,7 +15,7 @@ Rules, kept fixed so results stay comparable:
 - Errors are also split by whether the person is walking at forecast time
   (true speed above WALKING_MPS), since a model can win one case and lose the other.
 - "no motion" forecasts the track's current position; it uses the same tracks, so the
-  difference to "kalman" isolates the prediction itself.
+  difference to "forecast" isolates the prediction itself.
 """
 
 from __future__ import annotations
@@ -125,7 +125,7 @@ def tune(sessions: list[list[dict]]) -> tuple[tracker.Params, list[tuple[tracker
 
 def report(r: Result) -> str:
     lines = [f"{'predictor':<10} {'people':<8} {'mean':>7} {'p90':>7} {'n':>8}"]
-    for name, err in (("kalman", r.kalman_err), ("no motion", r.static_err)):
+    for name, err in (("forecast", r.kalman_err), ("no motion", r.static_err)):
         for subset, mask in (("all", np.ones_like(r.walking)), ("walking", r.walking), ("still", ~r.walking)):
             e = err[mask]
             if len(e):
@@ -160,7 +160,9 @@ def main(argv: list[str] | None = None) -> None:
         sessions = simulated_sessions(TEST_SEEDS)
         label = f"test seeds {TEST_SEEDS.start}-{TEST_SEEDS.stop - 1}, {N_PEOPLE} people, {DURATION_S:g} s each"
     print(f"1-second forecast error, {label}")
-    print(report(combine([evaluate(s) for s in sessions])))
+    for model in tracker.MODELS:
+        print(f"\n== tracker: {model}")
+        print(report(combine([evaluate(s, tracker.Params(model=model)) for s in sessions])))
 
 
 if __name__ == "__main__":

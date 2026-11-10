@@ -13,6 +13,7 @@ Test set: simulated, seeds 0–4, 2 people, 300 s each, `maps/demo_flat.json`, h
 |---|---|---|---|---|---|---|
 | 2026-11-10 | No motion (reference) | 0.529 / 1.228 m | 0.998 / 1.412 m | 0.258 / 0.564 m | 94.8% | 16.9% |
 | 2026-11-10 | Constant-velocity Kalman (σa = 1.0, coast 3 s) | **0.599 / 1.278 m** | 0.781 / 1.422 m | 0.494 / 1.126 m | 94.8% | 16.9% |
+| 2026-11-10 | IMM: walking / manoeuvring / still, misses as evidence (untuned) | **0.393 / 0.981 m** | 0.752 / 1.398 m | 0.206 / 0.447 m | 97.0% | 10.6% |
 
 **Reading:** the Kalman forecast beats "no motion" for walking people (0.78 vs 1.00 m)
 but loses for still people (0.49 vs 0.26 m): noise in its velocity estimate is
@@ -20,3 +21,12 @@ extrapolated for a full second. People are still about 63% of the time, so overa
 is worse than not predicting at all. Most false tracks are coasting tracks that slid on
 after their person stopped. Both point at the same fix: a motion model that can switch
 to "standing still" (IMM).
+
+**IMM (2026-11-10):** 34% lower mean error than the constant-velocity baseline (p90 −23%),
+and now better than "no motion" overall (0.39 vs 0.47 m on its own tracks). The gain is
+almost all on still people (0.49 → 0.21 m): each missed detection is treated as evidence
+that the person stopped, so tracks no longer slide on. Coverage rose and false tracks fell
+for the same reason. Parameters are starting values, not tuned; tuning waits for real
+sensor data. Known limitation: a stopped person who is still detected every frame is
+read as "walking at ~0 m/s", so velocity noise still leaks into the forecast; LD2410
+still readings are the planned fix.
