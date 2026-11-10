@@ -4,63 +4,166 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wallhack Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500&family=IBM+Plex+Mono:wght@400&display=swap">
 <style>
+  /* Monochrome "technical drawing" look: black field, hairlines, registration marks. */
   :root {
-    --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7;
-    --wall: #1d1d1f; --furniture: #e3e3e0; --room: #ffffff; --fov: rgba(0, 113, 227, 0.08);
-    --ring: rgba(0, 113, 227, 0.25); --helmet: #0071e3; --target: 220, 38, 38; --truth: #8e8e93;
-    --still: rgba(217, 119, 6, 0.35); --moving: rgba(220, 38, 38, 0.18);
+    --bg: #000; --fg: #f2f2f2; --fg-rgb: 242, 242, 242; --muted: #8a8a8a; --rule: rgba(242, 242, 242, 0.55);
+    --hair: rgba(242, 242, 242, 0.22);
+    --sans: "Inter Tight", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    color-scheme: dark;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #111113; --panel: #1c1c1e; --text: #f2f2f7; --muted: #98989f; --line: #38383a;
-      --wall: #e5e5ea; --furniture: #2c2c2e; --room: #18181a; --fov: rgba(10, 132, 255, 0.12);
-      --ring: rgba(10, 132, 255, 0.3); --helmet: #0a84ff; --target: 255, 69, 58; --truth: #8e8e93;
-      --still: rgba(255, 159, 10, 0.4); --moving: rgba(255, 69, 58, 0.2);
-    }
+  :root[data-theme="light"] {
+    --bg: #f4f4f1; --fg: #0b0b0b; --fg-rgb: 11, 11, 11; --muted: #6b6b6b; --rule: rgba(11, 11, 11, 0.55);
+    --hair: rgba(11, 11, 11, 0.2); color-scheme: light;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  body { display: flex; flex-direction: column; }
-  canvas { flex: 1; width: 100%; min-height: 0; display: block; }
-  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px;
-    background: var(--panel); border-top: 1px solid var(--line); }
-  .bar input[type=range] { flex: 1; min-width: 120px; }
-  button, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
-    border-radius: 6px; padding: 4px 10px; cursor: pointer; }
-  .stat { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .badge { color: #fff; background: #d97706; border-radius: 4px; padding: 1px 6px; display: none; }
-  label { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 14px/1.4 var(--sans); -webkit-font-smoothing: antialiased; }
+  body { display: grid; grid-template-rows: auto 1fr auto; gap: 16px; padding: 24px; transition: background .3s, color .3s; }
+  button, select { font: inherit; color: var(--fg); background: transparent; cursor: pointer; }
+  :focus-visible { outline: 1px solid var(--fg); outline-offset: 3px; }
+
+  /* square outlined icon buttons, as in the corners of the reference */
+  .sq { width: 36px; height: 36px; border: 1px solid var(--fg); display: grid; place-items: center; padding: 0; flex: none; }
+  .sq svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.2; }
+
+  header, footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+
+  .theme { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .switch { width: 24px; height: 14px; border: 1px solid var(--fg); border-radius: 7px; position: relative; padding: 0; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--fg); transition: transform .25s; }
+  :root:not([data-theme="light"]) .switch::after { transform: translateX(10px); }
+
+  main { display: grid; grid-template-columns: minmax(260px, 30%) 1fr; gap: 32px; min-height: 0; }
+  body.wide main { grid-template-columns: 0 1fr; gap: 0; }
+  .intro { display: flex; flex-direction: column; min-width: 0; overflow: hidden; padding-left: 40px; }
+  body.wide .intro { visibility: hidden; }
+  .eyebrow { color: var(--muted); font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+  h1 { font-weight: 300; font-size: clamp(30px, 3.4vw, 48px); line-height: 1.05; letter-spacing: -0.01em; margin: 24px 0 40px; min-height: 2.1em; }
+  h1 .caret { display: inline-block; width: 1px; height: .9em; background: var(--fg); margin-left: 2px; vertical-align: -0.08em;
+    animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .readout { display: grid; gap: 22px; }
+  .k { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; display: inline-block;
+    padding-bottom: 8px; border-bottom: 1px solid var(--fg); min-width: 76px; margin-bottom: 8px; }
+  .v { font-family: var(--mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.4em; }
+  .v.big { font-family: var(--sans); font-weight: 300; font-size: 26px; color: var(--fg); }
+  .badge { display: none; font-size: 10px; letter-spacing: .08em; border: 1px solid var(--fg); padding: 2px 6px; margin-left: 8px;
+    vertical-align: middle; font-family: var(--sans); color: var(--fg); }
+
+  .stage { position: relative; min-height: 0; min-width: 0; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  footer .controls { flex: 1; display: flex; align-items: center; gap: 16px; min-width: 0; }
+  .check { position: relative; }
+  .check input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .check input:focus-visible + .sq { outline: 1px solid var(--fg); outline-offset: 3px; }
+  .check input:not(:checked) + .sq { border-color: var(--hair); color: var(--muted); }
+  select { border: 1px solid var(--hair); height: 36px; padding: 0 10px; font-size: 13px; appearance: none; border-radius: 0; }
+  select option { background: var(--bg); }
+  #seek { flex: 1; min-width: 80px; appearance: none; background: transparent; height: 36px; margin: 0; }
+  #seek::-webkit-slider-runnable-track { height: 1px; background: var(--rule); }
+  #seek::-moz-range-track { height: 1px; background: var(--rule); }
+  #seek::-webkit-slider-thumb { appearance: none; width: 9px; height: 9px; margin-top: -4px; border-radius: 50%;
+    background: var(--bg); border: 1px solid var(--fg); }
+  #seek::-moz-range-thumb { width: 7px; height: 7px; border-radius: 50%; background: var(--bg); border: 1px solid var(--fg); }
+  .cta { border: 1px solid var(--fg); height: 44px; padding: 0 16px 0 18px; display: flex; align-items: center; gap: 28px;
+    font-size: 13px; min-width: 128px; justify-content: space-between; transition: background .2s, color .2s; }
+  .cta:hover { background: var(--fg); color: var(--bg); }
+
+  @media (max-width: 760px) {
+    body { padding: 16px; }
+    main { grid-template-columns: 1fr; grid-template-rows: auto minmax(320px, 1fr); gap: 16px; }
+    body.wide main { grid-template-rows: 0 1fr; }
+    .intro { padding-left: 0; }
+    h1 { margin: 16px 0 20px; min-height: 0; }
+    .readout { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+    footer { flex-wrap: wrap; }
+    footer .controls { flex-basis: 100%; }
+    .cta { flex: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
-<canvas id="map"></canvas>
-<div class="bar">
-  <button id="play">Pause</button>
-  <select id="speed" aria-label="Playback speed">
-    <option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
-  </select>
-  <input id="seek" type="range" min="0" value="0" aria-label="Timeline">
-  <span class="stat" id="time">0:00</span>
-  <span class="stat" id="count">0 targets</span>
-  <span class="stat" id="presence"></span>
-  <span class="badge" id="noimu">no IMU</span>
-  <label><input id="truth" type="checkbox" checked> true positions</label>
-</div>
+<header>
+  <button class="sq" id="menu" aria-label="Toggle details panel" aria-expanded="true">
+    <svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg>
+  </button>
+  <div class="theme">
+    <span>Light</span><button class="switch" id="theme" aria-label="Toggle dark mode"></button><span>Dark</span>
+  </div>
+</header>
+
+<main>
+  <section class="intro">
+    <div class="eyebrow">↳ at Wallhack</div>
+    <h1 id="title" aria-label="Seeing through the wall"></h1>
+    <div class="readout">
+      <div><span class="k">Time</span><div class="v big" id="time">0:00</div></div>
+      <div><span class="k">Targets</span><div class="v big"><span id="count">0 targets</span><span class="badge" id="noimu">No IMU</span></div></div>
+      <div><span class="k">Presence</span><div class="v" id="presence"></div></div>
+      <div><span class="k">Session</span><div class="v" id="meta"></div></div>
+    </div>
+  </section>
+  <section class="stage"><canvas id="map"></canvas></section>
+</main>
+
+<footer>
+  <div class="controls">
+    <label class="check" title="Show true positions">
+      <input id="truth" type="checkbox" checked aria-label="Show true positions">
+      <span class="sq"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 1v4M8 11v4M1 8h4M11 8h4"/></svg></span>
+    </label>
+    <select id="speed" aria-label="Playback speed">
+      <option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
+    </select>
+    <input id="seek" type="range" min="0" value="0" aria-label="Timeline">
+  </div>
+  <button class="cta" id="play"><span id="playLabel">Pause</span><span aria-hidden="true">→</span></button>
+</footer>
+
 <script>
 const FADE_S = 1.0;              // radar dots fade out over this long
 const RANGE_M = 6, HALF_FOV = Math.PI / 3, RINGS_M = [2, 4, 6];
-const MARGIN_M = 1.0, BODY_R_M = 0.25;
+const MARGIN_M = 1.4, BODY_R_M = 0.25;
 const GATE_M = 0.75;             // LD2410 distance resolution: arcs are one gate wide
+const TITLE = "Seeing through the wall";
 
 const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
-const ui = Object.fromEntries(["play", "speed", "seek", "time", "count", "presence", "noimu", "truth"]
-  .map(id => [id, document.getElementById(id)]));
+const ui = Object.fromEntries(["play", "playLabel", "speed", "seek", "time", "count", "presence", "noimu", "truth",
+  "meta", "menu", "theme", "title"].map(id => [id, document.getElementById(id)]));
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const ink = a => `rgba(${css("--fg-rgb")}, ${a})`;
 
 let plan, session, frame = null, trail = [], es = null, playing = true;
 
+// --- theme + chrome ---------------------------------------------------------
+const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+                set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+function setTheme(t) { document.documentElement.dataset.theme = t; store.set("wallhack-theme", t); if (plan) draw(); }
+setTheme(store.get("wallhack-theme") ||
+  (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
+ui.theme.onclick = () => setTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+ui.menu.onclick = () => {
+  const wide = document.body.classList.toggle("wide");
+  ui.menu.setAttribute("aria-expanded", String(!wide));
+  requestAnimationFrame(draw);
+};
+
+(function typeTitle() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { ui.title.textContent = TITLE; return; }
+  let n = 0; const caret = '<span class="caret"></span>';
+  const tick = () => { ui.title.innerHTML = TITLE.slice(0, n) + caret; if (n++ < TITLE.length) setTimeout(tick, 45 + Math.random() * 50); };
+  setTimeout(tick, 300);
+})();
+
+// --- drawing ----------------------------------------------------------------
 function view() {
   const b = plan.bounds, w = canvas.clientWidth, h = canvas.clientHeight;
   const bw = b.xmax - b.xmin + 2 * MARGIN_M, bh = b.ymax - b.ymin + 2 * MARGIN_M;
@@ -75,67 +178,134 @@ function poly(v, pts) {
   ctx.closePath();
 }
 
+function line(x1, y1, x2, y2) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+
+function crosshair(x, y, r = 6) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.stroke();
+  line(x - r, y, x + r, y); line(x, y - r, x, y + r);
+}
+
+// Registration marks around the plan, like a technical drawing sheet.
+function drawFrame(v) {
+  const b = plan.bounds, pad = 0.45 * v.s, gap = 10, len = 22;
+  const [x0, y0] = v.px(b.xmin, b.ymax), [x1, y1] = v.px(b.xmax, b.ymin);
+  const L = x0 - pad, R = x1 + pad, T = y0 - pad, B = y1 + pad;
+  ctx.strokeStyle = ink(0.85); ctx.lineWidth = 1;
+  ctx.strokeRect(L, T, R - L, B - T);
+  [[L, T, -1, -1], [R, T, 1, -1], [L, B, -1, 1], [R, B, 1, 1]].forEach(([x, y, sx, sy]) => {
+    line(x + sx * gap, y, x + sx * (gap + len), y);
+    line(x, y + sy * gap, x, y + sy * (gap + len));
+  });
+  const mx = (L + R) / 2, my = (T + B) / 2, off = gap + len / 2 + 4;
+  crosshair(mx, T - off); crosshair(mx, B + off); crosshair(L - off, my); crosshair(R + off, my);
+
+  // 1 m grid as faint dots
+  ctx.fillStyle = ink(0.18);
+  for (let x = Math.ceil(b.xmin); x <= b.xmax; x++) for (let y = Math.ceil(b.ymin); y <= b.ymax; y++) {
+    const [px, py] = v.px(x, y); ctx.fillRect(px - 0.5, py - 0.5, 1, 1);
+  }
+  // scale bar
+  ctx.strokeStyle = ink(0.6); const sy = B + 14, sx = L;
+  line(sx, sy, sx + v.s, sy); line(sx, sy - 3, sx, sy + 3); line(sx + v.s, sy - 3, sx + v.s, sy + 3);
+  label("1 M", sx + v.s + 8, sy, ink(0.6), "left");
+  label((plan.name || "").toUpperCase(), R, sy, ink(0.6), "right");
+  return [L, T, R - L, B - T];
+}
+
+function label(text, x, y, color, align = "center") {
+  ctx.font = `10px ${css("--mono")}`; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+function hatch(v, pts) {
+  ctx.save(); poly(v, pts); ctx.clip();
+  const xs = pts.map(p => v.px(...p)), minX = Math.min(...xs.map(p => p[0])), maxX = Math.max(...xs.map(p => p[0]));
+  const minY = Math.min(...xs.map(p => p[1])), maxY = Math.max(...xs.map(p => p[1]));
+  ctx.strokeStyle = ink(0.16); ctx.lineWidth = 1;
+  for (let x = minX - (maxY - minY); x < maxX; x += 6) line(x, maxY, x + (maxY - minY), minY);
+  ctx.restore();
+  poly(v, pts); ctx.strokeStyle = ink(0.45); ctx.stroke();
+}
+
 function draw() {
+  if (!plan) return;
   const dpr = window.devicePixelRatio || 1;
   canvas.width = canvas.clientWidth * dpr; canvas.height = canvas.clientHeight * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
   const v = view();
 
-  ctx.fillStyle = css("--room");
-  (plan.rooms || []).forEach(r => { poly(v, r.polygon); ctx.fill(); });
-  ctx.fillStyle = css("--furniture");
-  (plan.obstacles || []).forEach(o => { poly(v, o.polygon); ctx.fill(); });
+  const sheet = drawFrame(v);
+  (plan.obstacles || []).forEach(o => hatch(v, o.polygon));
+  (plan.rooms || []).forEach(r => {
+    const n = r.polygon.length, cx = r.polygon.reduce((a, p) => a + p[0], 0) / n, cy = r.polygon.reduce((a, p) => a + p[1], 0) / n;
+    const [x, y] = v.px(cx, cy); label(r.name.toUpperCase(), x, y, ink(0.3));
+  });
 
-  if (frame) drawHelmet(v);
+  if (frame) { ctx.save(); ctx.beginPath(); ctx.rect(...sheet); ctx.clip(); drawHelmet(v); ctx.restore(); }
 
-  ctx.strokeStyle = css("--wall"); ctx.lineCap = "round";
+  ctx.strokeStyle = css("--fg"); ctx.lineCap = "square";
   plan.walls.forEach(w => {
-    ctx.lineWidth = ["brick", "concrete"].includes(w.material) ? 5 : 3;
+    ctx.lineWidth = ["brick", "concrete"].includes(w.material) ? 2.5 : 1.2;
     ctx.beginPath(); ctx.moveTo(...v.px(...w.a)); ctx.lineTo(...v.px(...w.b)); ctx.stroke();
   });
+  ctx.strokeStyle = ink(0.5); ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+  (plan.doors || []).forEach(d => { ctx.beginPath(); ctx.moveTo(...v.px(...d.a)); ctx.lineTo(...v.px(...d.b)); ctx.stroke(); });
+  ctx.setLineDash([]);
 
   if (!frame) return;
   if (ui.truth.checked && frame.truth) {
-    ctx.fillStyle = css("--truth"); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.strokeStyle = ink(0.45); ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
     frame.truth.people.forEach(p => {
-      const [x, y] = v.px(p.x, p.y);
-      ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.arc(x, y, BODY_R_M * v.s, 0, 2 * Math.PI); ctx.fill();
-      ctx.globalAlpha = 1; ctx.fillText(p.id, x, y - BODY_R_M * v.s - 8);
+      const [x, y] = v.px(p.x, p.y), r = BODY_R_M * v.s;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.stroke();
+      label(String(p.id).toUpperCase(), x, y - r - 9, ink(0.55));
     });
+    ctx.setLineDash([]);
   }
-  const rgb = css("--target");
   trail.forEach(d => {
-    const age = frame.t_dev - d.t, [x, y] = v.px(d.x, d.y);
-    ctx.fillStyle = `rgba(${rgb}, ${Math.max(0, 1 - age / FADE_S)})`;
-    ctx.beginPath(); ctx.arc(x, y, age === 0 ? 6 : 4, 0, 2 * Math.PI); ctx.fill();
+    const age = frame.t_dev - d.t, a = Math.max(0, 1 - age / FADE_S), [x, y] = v.px(d.x, d.y);
+    if (age === 0) {   // live detection: soft halo ring + crosshair
+      ctx.save(); ctx.shadowColor = ink(0.9); ctx.shadowBlur = 14;
+      ctx.strokeStyle = ink(0.75); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 11, 0, 2 * Math.PI); ctx.stroke();
+      ctx.restore();
+      ctx.strokeStyle = ink(0.6); ctx.lineWidth = 1;
+      line(x - 18, y, x - 13, y); line(x + 13, y, x + 18, y); line(x, y - 18, x, y - 13); line(x, y + 13, x, y + 18);
+      ctx.fillStyle = css("--fg"); ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 2 * Math.PI); ctx.fill();
+    } else {
+      ctx.fillStyle = ink(0.6 * a); ctx.beginPath(); ctx.arc(x, y, 2, 0, 2 * Math.PI); ctx.fill();
+    }
   });
 }
 
 function drawHelmet(v) {
   const pose = frame.pose || { x: 0, y: 0 }, yaw = frame.yaw ?? 0;
-  const [hx, hy] = v.px(pose.x, pose.y);
-  ctx.fillStyle = css("--fov");
-  ctx.beginPath(); ctx.moveTo(hx, hy);
-  ctx.arc(hx, hy, RANGE_M * v.s, -(yaw + HALF_FOV), -(yaw - HALF_FOV)); ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = css("--ring"); ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
-  RINGS_M.forEach(r => { ctx.beginPath(); ctx.arc(hx, hy, r * v.s, -(yaw + HALF_FOV), -(yaw - HALF_FOV)); ctx.stroke(); });
+  const [hx, hy] = v.px(pose.x, pose.y), a0 = -(yaw + HALF_FOV), a1 = -(yaw - HALF_FOV);
+  ctx.fillStyle = ink(0.04); ctx.strokeStyle = ink(0.35); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(hx, hy); ctx.arc(hx, hy, RANGE_M * v.s, a0, a1); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = ink(0.2); ctx.setLineDash([2, 4]);
+  RINGS_M.forEach(r => {
+    ctx.beginPath(); ctx.arc(hx, hy, r * v.s, a0, a1); ctx.stroke();
+    const la = yaw + HALF_FOV - 0.06;   // just inside the cone's left edge, clear of room labels
+    label(`${r}M`, hx + r * v.s * Math.cos(la), hy - r * v.s * Math.sin(la), ink(0.45));
+  });
   ctx.setLineDash([]);
   const pr = frame.presence;
-  if (pr) [["moving_m", "--moving"], ["still_m", "--still"]].forEach(([key, color]) => {
+  if (pr) [["moving_m", 0.16, []], ["still_m", 0.3, [3, 3]]].forEach(([key, alpha, dash]) => {
     if (pr[key] == null) return;
-    ctx.strokeStyle = css(color); ctx.lineWidth = GATE_M * v.s;
-    ctx.beginPath(); ctx.arc(hx, hy, pr[key] * v.s, -(yaw + HALF_FOV), -(yaw - HALF_FOV)); ctx.stroke();
+    ctx.strokeStyle = ink(alpha); ctx.lineWidth = GATE_M * v.s; ctx.setLineDash(dash);
+    ctx.beginPath(); ctx.arc(hx, hy, pr[key] * v.s, a0, a1); ctx.stroke();
   });
-  ctx.fillStyle = css("--helmet");
+  ctx.setLineDash([]);
   const tip = 14, back = 8;
   ctx.beginPath();
   ctx.moveTo(hx + tip * Math.cos(yaw), hy - tip * Math.sin(yaw));
   ctx.lineTo(hx + back * Math.cos(yaw + 2.5), hy - back * Math.sin(yaw + 2.5));
   ctx.lineTo(hx + back * Math.cos(yaw - 2.5), hy - back * Math.sin(yaw - 2.5));
-  ctx.closePath(); ctx.fill();
+  ctx.closePath(); ctx.fillStyle = css("--bg"); ctx.fill(); ctx.strokeStyle = css("--fg"); ctx.lineWidth = 1.2; ctx.stroke();
 }
 
+// --- playback ---------------------------------------------------------------
 function onFrame(f) {
   frame = f;
   f.world.forEach(([x, y]) => trail.push({ x, y, t: f.t_dev }));
@@ -145,10 +315,10 @@ function onFrame(f) {
   ui.time.textContent = `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
   ui.count.textContent = `${f.targets.length} target${f.targets.length === 1 ? "" : "s"}`;
   const pr = f.presence;
-  ui.presence.textContent = !pr || pr.state === "none" ? "" :
+  ui.presence.textContent = !pr || pr.state === "none" ? "—" :
     [pr.moving_m != null && `moving ~${pr.moving_m} m`, pr.still_m != null && `still ~${pr.still_m} m`]
       .filter(Boolean).join(" · ");
-  ui.noimu.style.display = f.yaw == null ? "inline" : "none";
+  ui.noimu.style.display = f.yaw == null ? "inline-block" : "none";
   draw();
 }
 
@@ -159,7 +329,7 @@ function stream(start) {
   es.addEventListener("end", () => { es.close(); setPlaying(false); });
 }
 
-function setPlaying(p) { playing = p; ui.play.textContent = p ? "Pause" : "Play"; }
+function setPlaying(p) { playing = p; ui.playLabel.textContent = p ? "Pause" : "Play"; }
 
 ui.play.onclick = () => {
   if (playing) { es && es.close(); setPlaying(false); return; }
@@ -170,11 +340,12 @@ ui.play.onclick = () => {
 ui.speed.onchange = () => { if (playing && frame) stream(frame.i + 1); };
 ui.seek.oninput = () => { trail = []; stream(Number(ui.seek.value)); };
 ui.truth.onchange = draw;
-window.addEventListener("resize", draw);
+new ResizeObserver(draw).observe(canvas);
 
 Promise.all([fetch("/map").then(r => r.json()), fetch("/session").then(r => r.json())]).then(([m, s]) => {
   plan = m; session = s; ui.seek.max = s.n - 1;
-  ui.truth.parentElement.style.display = s.header.src === "sim" ? "flex" : "none";
+  ui.truth.parentElement.style.display = s.header.src === "sim" ? "" : "none";
+  ui.meta.textContent = [s.header.src, m.name, `${s.n} frames`].filter(Boolean).join(" · ");
   draw(); stream(0);
 });
 </script>
