@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "wallhack"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["numpy>=1.26"]
+dependencies = ["numpy>=1.26", "scipy>=1.11"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
@@ -27,3 +27,4 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "NPY"]
+ignore = ["N803", "N806"]  # Kalman filter maths uses textbook uppercase matrix names (F, P, K, R)
