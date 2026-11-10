@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from sim import floorplan as fpl
-from sim import people, radar
+from sim import people, presence, radar
 from sim.floorplan import FloorPlan
 from sim.radar import Pose
 
@@ -21,13 +21,15 @@ DEFAULT_HELMET = "2.0,2.2,0"  # x m, y m, yaw deg: bedroom, facing the living ro
 
 
 def frames(fp: FloorPlan, helmet: Pose, n_people: int, duration_s: float, seed: int) -> Iterator[dict]:
-    rng = np.random.default_rng([seed, 1])  # separate stream so radar noise never changes people's paths
+    rng = np.random.default_rng([seed, 1])  # separate streams so sensor noise never changes people's paths
+    presence_rng = np.random.default_rng([seed, 2])
     every = round(radar.FRAME_PERIOD_S / people.SIM_DT_S)
-    state = radar.initial_state()
+    state, presence_state = radar.initial_state(), presence.initial_state()
     for k, (t, ps) in enumerate(people.simulate(fp, n_people, duration_s, seed)):
         if k % every:
             continue
         state, targets, yaw = radar.sense(state, fp, helmet, ps, rng)
+        presence_state, reading = presence.sense(presence_state, fp, helmet, ps, presence_rng)
         yield {
             "v": FORMAT_VERSION,
             "src": "sim",
@@ -37,6 +39,7 @@ def frames(fp: FloorPlan, helmet: Pose, n_people: int, duration_s: float, seed: 
             "yaw": round(yaw, 4),
             "pose": {"x": helmet.x, "y": helmet.y},
             "targets": [{"x": tg.x, "y": tg.y, "v": tg.v} for tg in targets],
+            "presence": reading.to_dict(),
             "truth": {
                 "pose": {"x": helmet.x, "y": helmet.y, "yaw": helmet.yaw},
                 "people": [_truth(p) for p in ps],

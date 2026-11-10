@@ -9,12 +9,14 @@
     --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7;
     --wall: #1d1d1f; --furniture: #e3e3e0; --room: #ffffff; --fov: rgba(0, 113, 227, 0.08);
     --ring: rgba(0, 113, 227, 0.25); --helmet: #0071e3; --target: 220, 38, 38; --truth: #8e8e93;
+    --still: rgba(217, 119, 6, 0.35); --moving: rgba(220, 38, 38, 0.18);
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #111113; --panel: #1c1c1e; --text: #f2f2f7; --muted: #98989f; --line: #38383a;
       --wall: #e5e5ea; --furniture: #2c2c2e; --room: #18181a; --fov: rgba(10, 132, 255, 0.12);
       --ring: rgba(10, 132, 255, 0.3); --helmet: #0a84ff; --target: 255, 69, 58; --truth: #8e8e93;
+      --still: rgba(255, 159, 10, 0.4); --moving: rgba(255, 69, 58, 0.2);
     }
   }
   * { box-sizing: border-box; }
@@ -42,6 +44,7 @@
   <input id="seek" type="range" min="0" value="0" aria-label="Timeline">
   <span class="stat" id="time">0:00</span>
   <span class="stat" id="count">0 targets</span>
+  <span class="stat" id="presence"></span>
   <span class="badge" id="noimu">no IMU</span>
   <label><input id="truth" type="checkbox" checked> true positions</label>
 </div>
@@ -49,9 +52,10 @@
 const FADE_S = 1.0;              // radar dots fade out over this long
 const RANGE_M = 6, HALF_FOV = Math.PI / 3, RINGS_M = [2, 4, 6];
 const MARGIN_M = 1.0, BODY_R_M = 0.25;
+const GATE_M = 0.75;             // LD2410 distance resolution: arcs are one gate wide
 
 const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
-const ui = Object.fromEntries(["play", "speed", "seek", "time", "count", "noimu", "truth"]
+const ui = Object.fromEntries(["play", "speed", "seek", "time", "count", "presence", "noimu", "truth"]
   .map(id => [id, document.getElementById(id)]));
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
@@ -117,6 +121,12 @@ function drawHelmet(v) {
   ctx.strokeStyle = css("--ring"); ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
   RINGS_M.forEach(r => { ctx.beginPath(); ctx.arc(hx, hy, r * v.s, -(yaw + HALF_FOV), -(yaw - HALF_FOV)); ctx.stroke(); });
   ctx.setLineDash([]);
+  const pr = frame.presence;
+  if (pr) [["moving_m", "--moving"], ["still_m", "--still"]].forEach(([key, color]) => {
+    if (pr[key] == null) return;
+    ctx.strokeStyle = css(color); ctx.lineWidth = GATE_M * v.s;
+    ctx.beginPath(); ctx.arc(hx, hy, pr[key] * v.s, -(yaw + HALF_FOV), -(yaw - HALF_FOV)); ctx.stroke();
+  });
   ctx.fillStyle = css("--helmet");
   const tip = 14, back = 8;
   ctx.beginPath();
@@ -134,6 +144,10 @@ function onFrame(f) {
   const t = f.t_dev - session.t0;
   ui.time.textContent = `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
   ui.count.textContent = `${f.targets.length} target${f.targets.length === 1 ? "" : "s"}`;
+  const pr = f.presence;
+  ui.presence.textContent = !pr || pr.state === "none" ? "" :
+    [pr.moving_m != null && `moving ~${pr.moving_m} m`, pr.still_m != null && `still ~${pr.still_m} m`]
+      .filter(Boolean).join(" · ");
   ui.noimu.style.display = f.yaw == null ? "inline" : "none";
   draw();
 }

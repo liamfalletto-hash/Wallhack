@@ -60,6 +60,25 @@ One JSON object. Logged as **JSON Lines** (one frame per line) in
 | `targets[].x`, `.y` | float | Position in metres. |
 | `targets[].v` | float | Radial speed in m/s from the radar (sign as reported). |
 
+### Presence (optional)
+
+When an HLK-LD2410 presence sensor is fitted next to the LD2450, frames carry its
+latest reading. It sees people who are sitting or standing still (breathing, small
+movements), which the LD2450 often misses, but it gives distance only, no direction.
+
+```json
+"presence": {"state": "still", "moving_m": null, "still_m": 3.375}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `state` | string | `"none"`, `"moving"`, `"still"` or `"both"`. |
+| `moving_m` | float or null | Distance to the nearest moving person, metres. |
+| `still_m` | float or null | Distance to the nearest still person, metres. |
+
+Distances are only known to within one 0.75 m gate; values are the gate centre.
+Frames without the field (no LD2410) are valid.
+
 Simulated frames add a `truth` field, used only by evaluation and the viewer:
 
 ```json

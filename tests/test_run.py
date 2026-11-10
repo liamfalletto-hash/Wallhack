@@ -8,7 +8,7 @@ from sim import floorplan as fpl
 from sim import radar, run
 
 DEMO = Path(__file__).parent.parent / "maps" / "demo_flat.json"
-FRAME_KEYS = {"v", "src", "seq", "t_dev", "t", "yaw", "pose", "targets", "truth"}
+FRAME_KEYS = {"v", "src", "seq", "t_dev", "t", "yaw", "pose", "targets", "presence", "truth"}
 
 
 @pytest.fixture(scope="module")
@@ -25,6 +25,7 @@ def test_frames_follow_the_documented_format(frames):
         assert f["t_dev"] == pytest.approx(k * radar.FRAME_PERIOD_S)
         assert len(f["targets"]) <= radar.MAX_TARGETS
         assert all(set(t) == {"x", "y", "v"} for t in f["targets"])
+        assert f["presence"]["state"] in {"none", "moving", "still", "both"}
         assert [p["id"] for p in f["truth"]["people"]] == [0, 1]
         json.dumps(f)
 
