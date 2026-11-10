@@ -24,3 +24,6 @@ build/
 
 # Private instructions for Claude (kept local)
 CLAUDE.md
+
+# Wi-Fi credentials for the helmet (copy firmware/src/secrets.example.h)
+firmware/src/secrets.h
