@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wallhack Viewer</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7;
+    --wall: #1d1d1f; --furniture: #e3e3e0; --room: #ffffff; --fov: rgba(0, 113, 227, 0.08);
+    --ring: rgba(0, 113, 227, 0.25); --helmet: #0071e3; --target: 220, 38, 38; --truth: #8e8e93;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111113; --panel: #1c1c1e; --text: #f2f2f7; --muted: #98989f; --line: #38383a;
+      --wall: #e5e5ea; --furniture: #2c2c2e; --room: #18181a; --fov: rgba(10, 132, 255, 0.12);
+      --ring: rgba(10, 132, 255, 0.3); --helmet: #0a84ff; --target: 255, 69, 58; --truth: #8e8e93;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; }
+  canvas { flex: 1; width: 100%; min-height: 0; display: block; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 16px;
+    background: var(--panel); border-top: 1px solid var(--line); }
+  .bar input[type=range] { flex: 1; min-width: 120px; }
+  button, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .stat { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .badge { color: #fff; background: #d97706; border-radius: 4px; padding: 1px 6px; display: none; }
+  label { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+</style>
+</head>
+<body>
+<canvas id="map"></canvas>
+<div class="bar">
+  <button id="play">Pause</button>
+  <select id="speed" aria-label="Playback speed">
+    <option value="1">1×</option><option value="2">2×</option><option value="4">4×</option><option value="8">8×</option>
+  </select>
+  <input id="seek" type="range" min="0" value="0" aria-label="Timeline">
+  <span class="stat" id="time">0:00</span>
+  <span class="stat" id="count">0 targets</span>
+  <span class="badge" id="noimu">no IMU</span>
+  <label><input id="truth" type="checkbox" checked> true positions</label>
+</div>
+<script>
+const FADE_S = 1.0;              // radar dots fade out over this long
+const RANGE_M = 6, HALF_FOV = Math.PI / 3, RINGS_M = [2, 4, 6];
+const MARGIN_M = 1.0, BODY_R_M = 0.25;
+
+const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
+const ui = Object.fromEntries(["play", "speed", "seek", "time", "count", "noimu", "truth"]
+  .map(id => [id, document.getElementById(id)]));
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+let plan, session, frame = null, trail = [], es = null, playing = true;
+
+function view() {
+  const b = plan.bounds, w = canvas.clientWidth, h = canvas.clientHeight;
+  const bw = b.xmax - b.xmin + 2 * MARGIN_M, bh = b.ymax - b.ymin + 2 * MARGIN_M;
+  const s = Math.min(w / bw, h / bh);
+  const ox = (w - bw * s) / 2 - (b.xmin - MARGIN_M) * s, oy = (h + bh * s) / 2 + (b.ymin - MARGIN_M) * s;
+  return { s, px: (x, y) => [ox + x * s, oy - y * s] };
+}
+
+function poly(v, pts) {
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => { const [a, b] = v.px(x, y); i ? ctx.lineTo(a, b) : ctx.moveTo(a, b); });
+  ctx.closePath();
+}
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * dpr; canvas.height = canvas.clientHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+  const v = view();
+
+  ctx.fillStyle = css("--room");
+  (plan.rooms || []).forEach(r => { poly(v, r.polygon); ctx.fill(); });
+  ctx.fillStyle = css("--furniture");
+  (plan.obstacles || []).forEach(o => { poly(v, o.polygon); ctx.fill(); });
+
+  if (frame) drawHelmet(v);
+
+  ctx.strokeStyle = css("--wall"); ctx.lineCap = "round";
+  plan.walls.forEach(w => {
+    ctx.lineWidth = ["brick", "concrete"].includes(w.material) ? 5 : 3;
+    ctx.beginPath(); ctx.moveTo(...v.px(...w.a)); ctx.lineTo(...v.px(...w.b)); ctx.stroke();
+  });
+
+  if (!frame) return;
+  if (ui.truth.checked && frame.truth) {
+    ctx.fillStyle = css("--truth"); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    frame.truth.people.forEach(p => {
+      const [x, y] = v.px(p.x, p.y);
+      ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.arc(x, y, BODY_R_M * v.s, 0, 2 * Math.PI); ctx.fill();
+      ctx.globalAlpha = 1; ctx.fillText(p.id, x, y - BODY_R_M * v.s - 8);
+    });
+  }
+  const rgb = css("--target");
+  trail.forEach(d => {
+    const age = frame.t_dev - d.t, [x, y] = v.px(d.x, d.y);
+    ctx.fillStyle = `rgba(${rgb}, ${Math.max(0, 1 - age / FADE_S)})`;
+    ctx.beginPath(); ctx.arc(x, y, age === 0 ? 6 : 4, 0, 2 * Math.PI); ctx.fill();
+  });
+}
+
+function drawHelmet(v) {
+  const pose = frame.pose || { x: 0, y: 0 }, yaw = frame.yaw ?? 0;
+  const [hx, hy] = v.px(pose.x, pose.y);
+  ctx.fillStyle = css("--fov");
+  ctx.beginPath(); ctx.moveTo(hx, hy);
+  ctx.arc(hx, hy, RANGE_M * v.s, -(yaw + HALF_FOV), -(yaw - HALF_FOV)); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = css("--ring"); ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+  RINGS_M.forEach(r => { ctx.beginPath(); ctx.arc(hx, hy, r * v.s, -(yaw + HALF_FOV), -(yaw - HALF_FOV)); ctx.stroke(); });
+  ctx.setLineDash([]);
+  ctx.fillStyle = css("--helmet");
+  const tip = 14, back = 8;
+  ctx.beginPath();
+  ctx.moveTo(hx + tip * Math.cos(yaw), hy - tip * Math.sin(yaw));
+  ctx.lineTo(hx + back * Math.cos(yaw + 2.5), hy - back * Math.sin(yaw + 2.5));
+  ctx.lineTo(hx + back * Math.cos(yaw - 2.5), hy - back * Math.sin(yaw - 2.5));
+  ctx.closePath(); ctx.fill();
+}
+
+function onFrame(f) {
+  frame = f;
+  f.world.forEach(([x, y]) => trail.push({ x, y, t: f.t_dev }));
+  trail = trail.filter(d => f.t_dev - d.t < FADE_S && d.t <= f.t_dev);
+  ui.seek.value = f.i;
+  const t = f.t_dev - session.t0;
+  ui.time.textContent = `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  ui.count.textContent = `${f.targets.length} target${f.targets.length === 1 ? "" : "s"}`;
+  ui.noimu.style.display = f.yaw == null ? "inline" : "none";
+  draw();
+}
+
+function stream(start) {
+  if (es) es.close();
+  es = new EventSource(`/events?speed=${ui.speed.value}&start=${start}`);
+  es.onmessage = e => { onFrame(JSON.parse(e.data)); if (!playing) es.close(); };
+  es.addEventListener("end", () => { es.close(); setPlaying(false); });
+}
+
+function setPlaying(p) { playing = p; ui.play.textContent = p ? "Pause" : "Play"; }
+
+ui.play.onclick = () => {
+  if (playing) { es && es.close(); setPlaying(false); return; }
+  setPlaying(true);
+  const next = frame ? frame.i + 1 : 0;
+  stream(next >= session.n ? 0 : next);
+};
+ui.speed.onchange = () => { if (playing && frame) stream(frame.i + 1); };
+ui.seek.oninput = () => { trail = []; stream(Number(ui.seek.value)); };
+ui.truth.onchange = draw;
+window.addEventListener("resize", draw);
+
+Promise.all([fetch("/map").then(r => r.json()), fetch("/session").then(r => r.json())]).then(([m, s]) => {
+  plan = m; session = s; ui.seek.max = s.n - 1;
+  ui.truth.parentElement.style.display = s.header.src === "sim" ? "flex" : "none";
+  draw(); stream(0);
+});
+</script>
+</body>
+</html>
