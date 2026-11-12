@@ -38,6 +38,12 @@ facing up).
 
 ## Live view on the laptop
 
+**Easiest:** double-click `wallhack-live.command` in the repository folder (Finder). It
+starts the live view and opens your browser; close the Terminal window to stop. For a
+demo without hardware, double-click `wallhack-demo.command`.
+
+From a terminal instead:
+
 Stand where the map says you are (default 2.0, 2.2), face the direction given by the
 last number (degrees, 0 = map +x), then:
 
@@ -54,7 +60,8 @@ python -m host.viewer --live --serial /dev/cu.usbserial-0001 --helmet 2.0,2.2,0
 
 Every live session is recorded to `data/live_<date>_<time>.jsonl` and can be replayed
 with `python -m host.viewer data/live_....jsonl`. Without hardware, `python -m
-sim.fake_helmet` sends simulated frames the same way. On macOS, allow incoming
+sim.fake_helmet` sends simulated frames over the network the same way, and `python -m
+host.viewer --demo` simulates people inside the viewer itself. On macOS, allow incoming
 connections for Python if the firewall asks.
 
 ## First-run checks (untested on device)

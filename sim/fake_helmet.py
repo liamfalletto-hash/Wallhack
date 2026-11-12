@@ -9,7 +9,9 @@ from __future__ import annotations
 import argparse
 import json
 import socket
+import threading
 import time
+from collections.abc import Iterator
 
 from sim import floorplan as fpl
 from sim import run
@@ -23,6 +25,23 @@ def as_firmware(frame: dict) -> dict:
     return {k: v for k, v in frame.items() if k not in ("truth", "t")} | {"src": "ld2450", "pose": None}
 
 
+def realtime_frames(
+    stop: threading.Event,
+    people: int = 2,
+    duration_s: float = 600.0,
+    seed: int = 0,
+    helmet: str = run.DEFAULT_HELMET,
+) -> Iterator[dict]:
+    """Simulated firmware frames, paced like the real 10 Hz sensor."""
+    fp = fpl.load(run.DEFAULT_MAP)
+    start = time.monotonic()
+    for frame in run.frames(fp, run.parse_helmet(helmet), people, duration_s, seed):
+        delay = frame["t_dev"] - (time.monotonic() - start)
+        if stop.wait(max(delay, 0.0)):
+            return
+        yield as_firmware(frame)
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default=DEFAULT_HOST)
@@ -33,18 +52,12 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--helmet", default=run.DEFAULT_HELMET, help="x,y,yaw_deg; use the same value for the viewer")
     args = ap.parse_args(argv)
 
-    fp = fpl.load(run.DEFAULT_MAP)
-    helmet = run.parse_helmet(args.helmet)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         print(f"sending simulated frames to {args.host}:{args.port} (Ctrl+C to stop)")
-        start = time.monotonic()
         try:
-            for frame in run.frames(fp, helmet, args.people, args.duration, args.seed):
-                delay = frame["t_dev"] - (time.monotonic() - start)
-                if delay > 0:
-                    time.sleep(delay)
-                sock.sendto(json.dumps(as_firmware(frame)).encode(), (args.host, args.port))
+            for frame in realtime_frames(threading.Event(), args.people, args.duration, args.seed, args.helmet):
+                sock.sendto(json.dumps(frame).encode(), (args.host, args.port))
         except KeyboardInterrupt:
             pass
 

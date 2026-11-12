@@ -108,3 +108,14 @@ def test_live_viewer_streams_tracks_and_records(tmp_path):
         srv.shutdown()
     lines = log_path.read_text().splitlines()
     assert json.loads(lines[0])["type"] == "header" and len(lines) > 60
+
+
+def test_demo_source_is_firmware_like_and_stops_promptly():
+    stop = threading.Event()
+    gen = fake_helmet.realtime_frames(stop, duration_s=5.0)
+    first = next(gen)
+    assert first["pose"] is None and "truth" not in first and first["src"] == "ld2450"
+    stop.set()
+    t0 = time.monotonic()
+    assert list(gen) == []
+    assert time.monotonic() - t0 < 0.5

@@ -3,6 +3,7 @@
 python -m host.viewer data/<session>.jsonl            # replay a recording
 python -m host.viewer --live --helmet 2.0,2.2,0       # live from the helmet over Wi-Fi
 python -m host.viewer --live --serial /dev/cu.usbserial-0001 --helmet 2.0,2.2,0   # over USB
+python -m host.viewer --demo                          # live view of simulated people, no hardware
 """
 
 from __future__ import annotations
@@ -226,6 +227,7 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("session", type=Path, nargs="?", help="recording to replay")
     ap.add_argument("--live", action="store_true", help="show live data from the helmet")
+    ap.add_argument("--demo", action="store_true", help="live view of simulated people, no hardware needed")
     ap.add_argument("--serial", metavar="PORT", help="live over USB serial instead of Wi-Fi")
     ap.add_argument("--udp-port", type=int, default=ingest.UDP_PORT)
     ap.add_argument("--helmet", default=DEFAULT_HELMET, help="live: x,y,yaw_deg where you stand on the map")
@@ -233,13 +235,18 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args(argv)
+    args.live = args.live or args.demo
     if args.live == (args.session is not None):
-        ap.error("give either a recording to replay or --live")
+        ap.error("give either a recording to replay or --live / --demo")
     stop = None
     try:
         if args.live:
             helmet = ingest.parse_helmet(args.helmet)
-            if args.serial:
+            if args.demo:
+                from sim.fake_helmet import realtime_frames
+
+                source, name = (lambda ev: realtime_frames(ev, helmet=args.helmet)), "demo (simulated)"
+            elif args.serial:
                 source, name = (lambda ev: ingest.serial_frames(args.serial, ev)), f"serial:{args.serial}"
             else:
                 source, name = (lambda ev: ingest.udp_frames(args.udp_port, ev)), f"udp:{args.udp_port}"
