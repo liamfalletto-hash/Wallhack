@@ -66,106 +66,174 @@ def usb_ports() -> list[str]:
         from serial.tools import list_ports
     except ImportError:
         return []
-    return sorted(p.device for p in list_ports.comports() if "Bluetooth" not in p.device)
+    # macOS also lists built-in Bluetooth and debug-console ports, which are never the helmet.
+    skip = ("Bluetooth", "debug-console")
+    return sorted(p.device for p in list_ports.comports() if not any(k in p.device for k in skip))
 
 
 def main() -> None:
     import tkinter as tk
-    from tkinter import ttk
 
-    bg, surface, text, muted = "#0f1114", "#15181c", "#d9dde3", "#8b939e"
-    red, red_hover, red_dark, ok, bad = "#d63a3a", "#e85050", "#7a1f1f", "#4caf7a", "#d9534f"
-    font = "Helvetica"
+    # Same palette and type as host/static/index.html, so the launcher and the console match.
+    bg, surface, surface2, line, line_strong = "#0f1114", "#15181c", "#1b1f24", "#262b32", "#353b44"
+    text, text2, text3 = "#d9dde3", "#8b939e", "#5d6570"
+    red, red_hover, ok, bad = "#d63a3a", "#e04848", "#4caf7a", "#d9534f"
+    sans, mono = "Helvetica", "Menlo"
+    labels = {SOURCES[0]: "Helmet Wi-Fi", SOURCES[1]: "Helmet USB", SOURCES[2]: "Demo"}
 
     ctl = Controller()
     root = tk.Tk()
     root.title("Wallhack")
-    root.configure(bg=bg, padx=28, pady=24)
+    root.configure(bg=bg)
     root.resizable(False, False)
 
-    tk.Label(root, text="Wallhack", bg=bg, fg=text, font=(font, 22, "bold")).pack()
-    tk.Label(root, text="Through-wall radar console", bg=bg, fg=muted, font=(font, 12)).pack(pady=(0, 16))
+    def hline(parent: tk.Misc) -> None:
+        tk.Frame(parent, bg=line, height=1).pack(fill="x")
 
-    size = 200
-    button = tk.Canvas(root, width=size, height=size, bg=bg, highlightthickness=0, cursor="hand2")
-    button.pack(pady=8)
+    def clickable(widget: tk.Widget, action: object) -> None:
+        widget.bind("<Button-1>", lambda _: action())
+        widget.configure(cursor="hand2")
 
-    form = tk.Frame(root, bg=bg)
-    form.pack(fill="x", pady=(14, 0))
-    source = tk.StringVar(value=SOURCES[0])
-    port = tk.StringVar()
-    helmet = tk.StringVar(value=viewer.DEFAULT_HELMET.replace(",", ", "))
-
-    def row(label: str) -> tk.Frame:
-        f = tk.Frame(form, bg=bg)
-        f.pack(fill="x", pady=3)
-        tk.Label(f, text=label, bg=bg, fg=muted, font=(font, 12), width=14, anchor="w").pack(side="left")
-        return f
-
-    ttk.Combobox(row("Source"), textvariable=source, values=SOURCES, state="readonly", width=22).pack(side="left")
-    usb_row = row("USB port")
-    usb_box = ttk.Combobox(usb_row, textvariable=port, width=22)
-    usb_box.pack(side="left")
-    tk.Entry(
-        row("Position x, y, °"),
-        textvariable=helmet,
-        width=24,
-        bg=surface,
-        fg=text,
-        insertbackground=text,
-        relief="flat",
+    header = tk.Frame(root, bg=surface, padx=16, pady=10)
+    header.pack(fill="x")
+    tk.Label(header, text="Wallhack", bg=surface, fg=text, font=(sans, 14, "bold")).pack(side="left")
+    badge = tk.Label(
+        header,
+        text="READY",
+        font=(mono, 10, "bold"),
+        padx=6,
+        bg=surface2,
+        fg=text2,
         highlightthickness=1,
-        highlightbackground="#353b44",
-    ).pack(side="left")
-
-    status = tk.Label(root, text="Ready", bg=bg, fg=muted, font=(font, 12), wraplength=340, justify="center")
-    status.pack(pady=(16, 6))
-    open_btn = tk.Button(
-        root,
-        text="Open view in browser",
-        state="disabled",
-        font=(font, 12),
-        command=lambda: ctl.running and webbrowser.open(ctl.running.url),
+        highlightbackground=line_strong,
     )
-    open_btn.pack()
+    badge.pack(side="left", padx=10)
+    tk.Label(header, text="Launcher", bg=surface, fg=text3, font=(sans, 12)).pack(side="right")
+    hline(root)
+
+    body = tk.Frame(root, bg=bg, padx=24, pady=20)
+    body.pack(fill="x")
+    size = 180
+    button = tk.Canvas(body, width=size, height=size, bg=bg, highlightthickness=0, cursor="hand2")
+    button.pack(pady=(4, 20))
+
+    def field(label: str) -> tk.Frame:
+        row = tk.Frame(body, bg=bg)
+        row.pack(fill="x", pady=5)
+        tk.Label(row, text=label, bg=bg, fg=text2, font=(sans, 12), width=10, anchor="w").pack(side="left")
+        return row
+
+    def entry(parent: tk.Misc, var: tk.StringVar, width: int) -> tk.Entry:
+        e = tk.Entry(
+            parent,
+            textvariable=var,
+            width=width,
+            bg=surface2,
+            fg=text,
+            insertbackground=text,
+            relief="flat",
+            font=(mono, 12),
+            highlightthickness=1,
+            highlightbackground=line_strong,
+            highlightcolor=text3,
+        )
+        e.pack(side="left", ipady=4)
+        return e
+
+    source = tk.StringVar(value=SOURCES[0])
+    seg = tk.Frame(field("Source"), bg=line_strong, padx=1, pady=1)
+    seg.pack(side="left")
+    seg_buttons: dict[str, tk.Label] = {}
+    for value in SOURCES:
+        b = tk.Label(seg, text=labels[value], font=(sans, 12), padx=10, pady=4)
+        b.pack(side="left", padx=(0 if value == SOURCES[0] else 1, 0))
+        clickable(b, lambda v=value: source.set(v))
+        seg_buttons[value] = b
+
+    port = tk.StringVar()
+    usb_row = field("USB port")
+    entry(usb_row, port, 22)
+    refresh = tk.Label(usb_row, text="Detect", bg=bg, fg=text2, font=(sans, 12), padx=8)
+    refresh.pack(side="left")
+
+    helmet = tk.StringVar(value=viewer.DEFAULT_HELMET.replace(",", ", "))
+    pos_row = field("Position")
+    entry(pos_row, helmet, 14)
+    tk.Label(pos_row, text="x m, y m, facing °", bg=bg, fg=text3, font=(sans, 11), padx=8).pack(side="left")
+
+    hline(root)
+    footer = tk.Frame(root, bg=surface, padx=16, pady=10)
+    footer.pack(fill="x")
+    dot = tk.Canvas(footer, width=10, height=10, bg=surface, highlightthickness=0)
+    dot.pack(side="left", anchor="n", pady=4)
+    status = tk.Label(
+        footer, text="Ready", bg=surface, fg=text2, font=(mono, 11), justify="left", anchor="w", wraplength=250
+    )
+    status.pack(side="left", padx=8, fill="x", expand=True)
+    open_btn = tk.Label(
+        footer,
+        text="Open view",
+        font=(sans, 12),
+        padx=10,
+        pady=3,
+        bg=surface2,
+        fg=text3,
+        highlightthickness=1,
+        highlightbackground=line_strong,
+    )
+    open_btn.pack(side="right", anchor="n")
+
+    def set_status(msg: str, color: str) -> None:
+        status.configure(text=msg, fg=text if color == ok else (bad if color == bad else text2))
+        dot.delete("all")
+        dot.create_oval(1, 1, 9, 9, fill=color, outline="")
 
     def draw(hover: bool = False) -> None:
         button.delete("all")
-        running = ctl.running is not None
-        fill = surface if running else (red_hover if hover else red)
-        button.create_oval(6, 6, size - 6, size - 6, fill=red_dark if not running else bg, outline="")
-        button.create_oval(16, 16, size - 16, size - 16, fill=fill, outline=red if running else "", width=4)
-        button.create_text(
-            size / 2,
-            size / 2,
-            text="STOP" if running else "START",
-            fill=red if running else "white",
-            font=(font, 30, "bold"),
-        )
+        if ctl.running:
+            button.create_oval(8, 8, size - 8, size - 8, fill=surface, outline=red, width=3)
+            button.create_text(size / 2, size / 2, text="STOP", fill=red, font=(sans, 28, "bold"))
+        else:
+            button.create_oval(8, 8, size - 8, size - 8, fill=red_hover if hover else red, outline="")
+            button.create_text(size / 2, size / 2, text="START", fill="white", font=(sans, 28, "bold"))
 
     def on_source(*_: object) -> None:
-        usb = source.get() == SOURCES[1]
-        if usb:
-            usb_box.configure(values=usb_ports())
-            if not port.get() and usb_box["values"]:
-                port.set(usb_box["values"][0])
-        for child in usb_row.winfo_children():
-            child.configure(state="normal" if usb else "disabled")
+        for value, b in seg_buttons.items():
+            active = value == source.get()
+            b.configure(bg=surface2 if active else bg, fg=text if active else text2)
+        if source.get() == SOURCES[1]:
+            usb_row.pack(fill="x", pady=5, before=pos_row)
+            detect()
+        else:
+            usb_row.pack_forget()
+
+    def detect() -> None:
+        ports = usb_ports()
+        if ports and port.get() not in ports:
+            port.set(ports[0])
+        if not ports:
+            set_status("No USB serial port found. Plug in the helmet and press Detect.", bad)
+
+    def open_view() -> None:
+        if ctl.running:
+            webbrowser.open(ctl.running.url)
 
     def toggle(_: object = None) -> None:
         if ctl.running:
             ctl.stop()
-            status.configure(text="Stopped", fg=muted)
-            open_btn.configure(state="disabled")
+            set_status("Stopped", text3)
+            badge.configure(text="READY", bg=surface2, fg=text2)
+            open_btn.configure(fg=text3)
         else:
             try:
                 r = ctl.start(source.get(), helmet.get(), port.get() or None)
             except (OSError, ValueError) as e:
-                status.configure(text=f"Could not start: {e}", fg=bad)
+                set_status(f"Could not start: {e}", bad)
                 draw()
                 return
-            status.configure(text=f"Running · {r.source_name}\nRecording {r.log_path}", fg=ok)
-            open_btn.configure(state="normal")
+            set_status(f"{r.source_name}\nRecording {r.log_path}", ok)
+            badge.configure(text="LIVE", bg=ok, fg=bg)
+            open_btn.configure(fg=text)
             webbrowser.open(r.url)
         draw()
 
@@ -173,12 +241,15 @@ def main() -> None:
         ctl.stop()
         root.destroy()
 
+    clickable(refresh, detect)
+    clickable(open_btn, open_view)
     source.trace_add("write", on_source)
     button.bind("<Button-1>", toggle)
     button.bind("<Enter>", lambda _: draw(hover=True))
     button.bind("<Leave>", lambda _: draw())
     root.protocol("WM_DELETE_WINDOW", on_close)
     on_source()
+    set_status("Ready", text3)
     draw()
     root.lift()
     root.attributes("-topmost", True)  # appear in front when started from Finder
