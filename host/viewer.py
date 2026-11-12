@@ -85,15 +85,18 @@ class LiveHub:
 
     def run(self) -> None:
         state = tracker.TrackerState()
-        for raw in self._frames:
-            self._aligner, f = ingest.align(self._aligner, raw, time.time())
-            self._log.write(json.dumps(f) + "\n")
-            self._log.flush()
-            state, tracks = overlay(state, f)
-            with self._cond:
-                self._recent = [*self._recent, with_world_targets(f, self.received, tracks)][-LIVE_BUFFER:]
-                self.received += 1
-                self._cond.notify_all()
+        try:
+            for raw in self._frames:
+                self._aligner, f = ingest.align(self._aligner, raw, time.time())
+                self._log.write(json.dumps(f) + "\n")
+                self._log.flush()
+                state, tracks = overlay(state, f)
+                with self._cond:
+                    self._recent = [*self._recent, with_world_targets(f, self.received, tracks)][-LIVE_BUFFER:]
+                    self.received += 1
+                    self._cond.notify_all()
+        finally:
+            self._log.close()  # the source stopped (Ctrl+C, STOP button) or failed
 
     def after(self, index: int, timeout: float) -> list[dict]:
         """Frames newer than `index`, waiting up to `timeout` for the next one."""

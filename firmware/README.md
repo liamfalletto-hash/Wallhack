@@ -38,9 +38,11 @@ facing up).
 
 ## Live view on the laptop
 
-**Easiest:** double-click `wallhack-live.command` in the repository folder (Finder). It
-starts the live view and opens your browser; close the Terminal window to stop. For a
-demo without hardware, double-click `wallhack-demo.command`.
+**Easiest:** double-click `Wallhack.app` in the repository folder (Finder; drag it to the
+Dock for one-click access). Pick the source (helmet over Wi-Fi or USB, or a demo with
+simulated people), set where you stand on the map, and press **START**; the view opens
+in your browser. Press **STOP** or close the window to stop. Errors are logged to
+`data/launcher.log`.
 
 From a terminal instead:
 

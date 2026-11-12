@@ -1,0 +1,14 @@
+#!/bin/bash
+# Wallhack.app lives in the repository root: run the launcher window with the project's .venv.
+REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$REPO" || exit 1
+if [ ! -x .venv/bin/python ]; then
+  osascript -e "display alert \"Wallhack needs setting up\" message \"No .venv in $REPO. In Terminal, in that folder, run once:
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev,usb]'\""
+  exit 1
+fi
+mkdir -p data
+exec .venv/bin/python -m host.launcher 2>>data/launcher.log
