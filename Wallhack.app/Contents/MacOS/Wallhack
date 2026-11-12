@@ -14,6 +14,6 @@ mkdir -p data
 # Finder starts script-only apps under Rosetta (Intel) on Apple silicon, but the packages in
 # .venv are arm64, so run Python natively whenever the Mac has an Apple chip.
 if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then
-  exec arch -arm64 .venv/bin/python -m host.launcher 2>>data/launcher.log
+  exec /usr/bin/arch -arm64 "$REPO/.venv/bin/python" -m host.launcher 2>>"$REPO/data/launcher.log"
 fi
-exec .venv/bin/python -m host.launcher 2>>data/launcher.log
+exec "$REPO/.venv/bin/python" -m host.launcher 2>>"$REPO/data/launcher.log"
