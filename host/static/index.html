@@ -29,6 +29,7 @@
   .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
   .chip.ok::before { background: var(--ok); } .chip.warn::before { background: var(--warn); }
   .chip.bad::before { background: var(--bad); }
+  .mode-badge.live { color: #0f1114; background: var(--ok); border-color: var(--ok); }
   .mode-badge { padding: 1px 6px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line-strong);
     font: 600 11px var(--mono); color: var(--text-2); }
   main { display: grid; grid-template-columns: 1fr 330px; min-height: 0; }
@@ -74,6 +75,7 @@
   <span class="kv">Source<b id="src">—</b></span>
   <span class="kv">Time<b id="time">00:00:00.0</b></span>
   <span class="kv">Heading<b id="heading">—</b></span>
+  <span class="kv" id="rec-wrap" hidden>Recording<b id="rec"></b></span>
   <div class="chips">
     <span class="chip" id="chip-radar">LD2450</span>
     <span class="chip" id="chip-presence">LD2410</span>
@@ -119,14 +121,16 @@ const STATE = { walking: ["Moving", "--track"], manoeuvring: ["Turning", "--turn
 const canvas = document.getElementById("map"), ctx = canvas.getContext("2d");
 const $ = id => document.getElementById(id);
 const ui = Object.fromEntries(["play", "speed", "seek", "time", "heading", "src", "mode", "frameno", "truth",
-  "ntracks", "tracks", "no-tracks", "chip-radar", "chip-presence", "chip-imu", "legend-truth"].map(id => [id, $(id)]));
+  "ntracks", "tracks", "no-tracks", "chip-radar", "chip-presence", "chip-imu", "legend-truth", "rec-wrap", "rec"].map(id => [id, $(id)]));
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const C = {};
 ["--wall", "--furniture", "--grid", "--fov", "--track", "--hit", "--still", "--turn", "--warn", "--text-2", "--text-3",
   "--surface"].forEach(k => { C[k] = css(k); });
 const FONT = `11px ${css("--mono")}`, FONT_SANS = `500 11px ${css("--sans")}`;
 
+const STALE_MS = 1500;          // live: warn when no frame has arrived for this long
 let plan, session, frame = null, hits = [], history = new Map(), es = null, playing = true;
+let lastFrameMs = 0;
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -162,7 +166,13 @@ function draw() {
   ctx.strokeStyle = C["--wall"]; ctx.lineCap = "square";
   plan.walls.forEach(w => { ctx.lineWidth = ["brick", "concrete"].includes(w.material) ? 3 : 1.5; seg(v, w.a, w.b); });
   drawScale(v);
-  if (!frame) return;
+  if (!frame) {
+    if (session && session.live) {
+      ctx.fillStyle = C["--text-2"]; ctx.font = `500 14px ${css("--sans")}`; ctx.textAlign = "center";
+      ctx.fillText(`Waiting for helmet data on ${session.header.src}…`, canvas.clientWidth / 2, canvas.clientHeight / 2);
+    }
+    return;
+  }
   if (ui.truth.checked && frame.truth) drawTruth(v);
   drawHits(v);
   drawTracks(v);
@@ -297,6 +307,9 @@ function updatePanel(f) {
 }
 
 function onFrame(f) {
+  lastFrameMs = Date.now();
+  if (session.t0 == null) session.t0 = f.t_dev;
+  if (session.live && !playing) return;  // frozen: keep receiving, stop redrawing
   frame = f;
   f.world.forEach(([x, y]) => hits.push({ x, y, t: f.t_dev }));
   hits = hits.filter(d => f.t_dev - d.t < FADE_S && d.t <= f.t_dev);
@@ -321,9 +334,27 @@ function stream(start) {
   es.addEventListener("end", () => { es.close(); setPlaying(false); });
 }
 
-function setPlaying(p) { playing = p; ui.play.textContent = p ? "Pause" : "Play"; }
+function setPlaying(p) {
+  playing = p;
+  ui.play.textContent = session && session.live ? (p ? "Freeze" : "Resume") : (p ? "Pause" : "Play");
+}
+
+function startLive() {
+  ui.mode.textContent = "LIVE"; ui.mode.classList.add("live");
+  ui.src.textContent = session.header.src;
+  [ui.speed, ui.seek, ui.frameno.parentElement].forEach(el => { el.style.display = "none"; });
+  ui["rec-wrap"].hidden = false; ui.rec.textContent = session.log;
+  setPlaying(true);
+  es = new EventSource("/events");
+  es.onmessage = e => onFrame(JSON.parse(e.data));
+  setInterval(() => {
+    const quiet = Date.now() - lastFrameMs;
+    if (lastFrameMs && quiet > STALE_MS) setChip(ui["chip-radar"], "bad", `no data for ${(quiet / 1000).toFixed(0)} s`);
+  }, 500);
+}
 
 ui.play.onclick = () => {
+  if (session.live) { setPlaying(!playing); return; }
   if (playing) { es && es.close(); setPlaying(false); return; }
   setPlaying(true);
   const next = frame ? frame.i + 1 : 0;
@@ -335,12 +366,14 @@ ui.truth.onchange = draw;
 window.addEventListener("resize", resize);
 
 Promise.all([fetch("/map").then(r => r.json()), fetch("/session").then(r => r.json())]).then(([m, s]) => {
-  plan = m; session = s; ui.seek.max = s.n - 1;
+  plan = m; session = s;
   const sim = s.header.src === "sim";
   ui.src.textContent = sim ? "Simulation" : s.header.src;
   ui.truth.parentElement.style.display = sim ? "flex" : "none";
   ui["legend-truth"].style.display = sim ? "flex" : "none";
-  resize(); stream(0);
+  resize();
+  if (s.live) { startLive(); return; }
+  ui.seek.max = s.n - 1; stream(0);
 });
 </script>
 </body>

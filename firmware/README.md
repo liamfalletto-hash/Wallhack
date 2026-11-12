@@ -36,6 +36,27 @@ facing up).
    ```
    Frames are lines starting with `{`; status messages start with `#`.
 
+## Live view on the laptop
+
+Stand where the map says you are (default 2.0, 2.2), face the direction given by the
+last number (degrees, 0 = map +x), then:
+
+```bash
+python -m host.viewer --live --helmet 2.0,2.2,0
+```
+
+Over USB instead of Wi-Fi (needs `pip install -e ".[usb]"`; find the port with
+`ls /dev/cu.*`):
+
+```bash
+python -m host.viewer --live --serial /dev/cu.usbserial-0001 --helmet 2.0,2.2,0
+```
+
+Every live session is recorded to `data/live_<date>_<time>.jsonl` and can be replayed
+with `python -m host.viewer data/live_....jsonl`. Without hardware, `python -m
+sim.fake_helmet` sends simulated frames the same way. On macOS, allow incoming
+connections for Python if the firewall asks.
+
 ## First-run checks (untested on device)
 
 None of this has run on real hardware yet. On the first power-up:

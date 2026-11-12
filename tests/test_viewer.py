@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -7,9 +8,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from host import viewer
+from host import ingest, viewer
 from host.geometry import frame_targets_world, sensor_to_world
-from sim import radar, run
+from sim import fake_helmet, radar, run
+from sim import floorplan as fpl
 
 DEMO = Path(__file__).parent.parent / "maps" / "demo_flat.json"
 
@@ -71,3 +73,38 @@ def test_bad_query_is_rejected(server):
     with pytest.raises(urllib.error.HTTPError) as err:
         get(server + "/events?speed=fast")
     assert err.value.code == 400
+
+
+def firmware_like_frames(stop):
+    """Simulated frames as the firmware sends them: no pose, raw IMU heading, no ground truth."""
+    fp = fpl.load(DEMO)
+    for f in run.frames(fp, run.parse_helmet(run.DEFAULT_HELMET), n_people=2, duration_s=30, seed=1):
+        if stop.is_set():
+            return
+        time.sleep(0.005)
+        yield fake_helmet.as_firmware(f)
+
+
+def test_live_viewer_streams_tracks_and_records(tmp_path):
+    helmet = ingest.HelmetPose(2.0, 2.2, 0.0)
+    srv, stop, log_path = viewer.serve_live(firmware_like_frames, "test", helmet, DEMO, port=0, log_dir=tmp_path)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        info = json.loads(get(base + "/session"))
+        assert info["live"] and info["log"] == str(log_path) and info["header"]["src"] == "test"
+        events = []
+        with urllib.request.urlopen(base + "/events", timeout=5) as r:
+            while len(events) < 60:
+                line = r.readline().decode()
+                if line.startswith("data: "):
+                    events.append(json.loads(line[6:]))
+        idx = [e["i"] for e in events]
+        assert idx == sorted(idx) and len(set(idx)) == len(idx)
+        assert all(e["pose"] == {"x": 2.0, "y": 2.2} and "t" in e for e in events)
+        assert any(e["tracks"] for e in events)
+    finally:
+        stop.set()
+        srv.shutdown()
+    lines = log_path.read_text().splitlines()
+    assert json.loads(lines[0])["type"] == "header" and len(lines) > 60

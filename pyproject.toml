@@ -10,6 +10,7 @@ dependencies = ["numpy>=1.26", "scipy>=1.11"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+usb = ["pyserial>=3.5"]  # live view over USB serial
 
 [tool.setuptools]
 packages = ["sim", "host"]
