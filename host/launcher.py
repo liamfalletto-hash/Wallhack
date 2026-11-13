@@ -73,12 +73,17 @@ def usb_ports() -> list[str]:
     return sorted(p.device for p in list_ports.comports() if not any(k in p.device for k in skip))
 
 
-W = 400  # window width, px
-DARK, PAGE, CARD, TEXT, TEXT2 = "#1e2023", "#f3f5f4", "#ffffff", "#1e2023", "#7c838b"
-MINT, TEAL, MINT_SOFT, TEAL_TEXT = "#62f0b4", "#1db9a7", "#e2f7f0", "#139e8f"
-RED_LIGHT, RED, ERROR, SHADOW = "#ff6b6b", "#d63a3a", "#d9534f", "#e1e5e3"
-FONT = "Helvetica"
-TILES = (("Wi-Fi", "wifi"), ("USB", "usb"), ("Demo", "demo"))
+W, PAD = 400, 32  # window width and side margin, px
+ONYX, PANEL, HAIRLINE, DIVIDER = "#0b0b0d", "#141416", "#2b2a2d", "#232225"
+IVORY, MUTED, FAINT = "#f3efe7", "#8d8981", "#6f6b64"
+GOLD, GOLD_LIGHT, GOLD_DEEP, GOLD_DIM = "#d4b483", "#e6cf9f", "#a8874f", "#4a3f2c"
+OXBLOOD_LIGHT, OXBLOOD, OXBLOOD_EDGE, ERROR = "#a8291f", "#560d09", "#c4473b", "#d9534f"
+LABELS = ("Wi-Fi", "USB", "Demo")  # same order as SOURCES
+
+
+def _spaced(text: str) -> str:
+    # Tk has no letter-spacing; thin spaces give the tracked small-caps look.
+    return "\u2009".join(text).replace("\u2009 \u2009", "\u2009\u2009\u2009")
 
 
 def _mix(c1: str, c2: str, t: float) -> str:
@@ -133,30 +138,6 @@ def _gradient_circle(cv: object, cx: float, cy: float, r: float, c1: str, c2: st
     cv.create_oval(cx - r, cy - r, cx + r, cy + r, outline=_mix(c1, c2, 0.5), tags=tags)
 
 
-def _glyph(cv: object, kind: str, cx: float, cy: float, color: str, tags: str) -> None:
-    if kind == "wifi":
-        for r in (6, 12, 18):
-            cv.create_arc(
-                cx - r,
-                cy - r + 8,
-                cx + r,
-                cy + r + 8,
-                start=45,
-                extent=90,
-                style="arc",
-                outline=color,
-                width=2.5,
-                tags=tags,
-            )
-        cv.create_oval(cx - 2.5, cy + 5.5, cx + 2.5, cy + 10.5, fill=color, outline="", tags=tags)
-    elif kind == "usb":
-        cv.create_rectangle(cx - 7, cy - 4, cx + 7, cy + 10, outline=color, width=2.5, tags=tags)
-        for dx in (-3, 3):
-            cv.create_line(cx + dx, cy - 11, cx + dx, cy - 4, fill=color, width=2.5, tags=tags)
-    else:
-        cv.create_polygon(cx - 6, cy - 9, cx - 6, cy + 9, cx + 9, cy, fill=color, outline=color, tags=tags)
-
-
 def main() -> None:
     import tkinter as tk
     import tkinter.font as tkfont
@@ -164,11 +145,15 @@ def main() -> None:
     ctl = Controller()
     root = tk.Tk()
     root.title("Wallhack")
-    root.configure(bg=PAGE)
+    root.configure(bg=ONYX)
     root.resizable(False, False)
-    cv = tk.Canvas(root, width=W, bg=PAGE, highlightthickness=0)
-    cv.pack()
 
+    families = set(tkfont.families(root))
+    serif = next((f for f in ("Didot", "Bodoni 72", "Playfair Display", "DejaVu Serif") if f in families), "Times")
+    sans = next((f for f in ("Avenir Next", "Helvetica Neue", "Inter", "DejaVu Sans") if f in families), "Helvetica")
+
+    cv = tk.Canvas(root, width=W, bg=ONYX, highlightthickness=0)
+    cv.pack()
     source = tk.StringVar(value=SOURCES[0])
     port = tk.StringVar()
     helmet = tk.StringVar(value=viewer.DEFAULT_HELMET.replace(",", ", "))
@@ -179,110 +164,124 @@ def main() -> None:
         "note": "",
         "error": False,
     }
-    pill_font = tkfont.Font(family=FONT, size=12, weight="bold")
 
     def entry(var: tk.StringVar) -> tk.Entry:
         return tk.Entry(
             root,
             textvariable=var,
-            bg=CARD,
-            fg=TEXT,
-            insertbackground=TEXT,
+            bg=ONYX,
+            fg=IVORY,
+            insertbackground=GOLD,
             relief="flat",
             bd=0,
             highlightthickness=0,
-            font=(FONT, 15),
+            font=(sans, 15),
         )
 
     port_entry, pos_entry = entry(port), entry(helmet)
 
-    def pill(x1: float, cy: float, label: str, tag: str, dark: bool = True) -> None:
-        w = pill_font.measure(label) + 28
-        _round_rect(cv, x1 - w, cy - 15, x1, cy + 15, 15, fill=DARK if dark else MINT_SOFT, tags=tag)
-        cv.create_text(x1 - w / 2, cy, text=label, fill=CARD if dark else TEAL_TEXT, font=pill_font, tags=tag)
+    def link(tag: str, action: object) -> None:
+        cv.tag_bind(tag, "<Button-1>", lambda _: action())
         cv.tag_bind(tag, "<Enter>", lambda _: cv.configure(cursor="hand2"))
         cv.tag_bind(tag, "<Leave>", lambda _: cv.configure(cursor=""))
 
-    def card(y: float, h: float, label: str) -> None:
-        _round_rect(cv, 24, y + 4, W - 24, y + h + 4, 18, fill=SHADOW)
-        _round_rect(cv, 24, y, W - 24, y + h, 18, fill=CARD)
-        cv.create_text(42, y + 18, text=label, anchor="w", fill=TEXT2, font=(FONT, 11))
+    def caption(x: float, y: float, text: str, anchor: str = "w", color: str = FAINT, tag: str = "") -> None:
+        cv.create_text(x, y, text=_spaced(text.upper()), anchor=anchor, fill=color, font=(sans, 9), tags=tag)
+
+    def field(y: float, label: str, hint: str, widget: tk.Entry) -> None:
+        caption(PAD, y, label)
+        cv.create_text(W - PAD, y, text=hint, anchor="e", fill=FAINT, font=(sans, 10))
+        cv.create_window(PAD, y + 26, window=widget, anchor="w", width=W - 2 * PAD - 70)
+        cv.create_line(PAD, y + 42, W - PAD, y + 42, fill=HAIRLINE)
 
     def render() -> None:
         cv.delete("all")
         running = ctl.running is not None
-        # Dark header with the big status word, like the balance panels in the reference.
-        _round_rect(cv, 0, -60, W, 236, 34, fill=DARK)
-        cv.create_oval(26, 22, 42, 38, fill=MINT, outline="")
-        cv.create_text(50, 30, text="Wallhack", anchor="w", fill=CARD, font=(FONT, 14, "bold"))
-        badge, badge_bg, badge_fg = ("LIVE", MINT, DARK) if running else ("READY", "#3a3d42", "#c8ccd0")
-        _round_rect(cv, W - 92, 17, W - 24, 43, 13, fill=badge_bg)
-        cv.create_text(W - 58, 30, text=badge, fill=badge_fg, font=(FONT, 11, "bold"))
-        cv.create_text(W / 2, 80, text="Status", fill="#8f959c", font=(FONT, 12))
-        cv.create_text(W / 2, 112, text=ui["title"], fill=CARD, font=(FONT, 32, "bold"))
-        cv.create_text(W / 2, 148, text=ui["subtitle"], fill="#8f959c", font=(FONT, 12))
+        # A faint warm glow behind the header, fading into onyx.
+        for y in range(0, 240, 2):
+            cv.create_rectangle(0, y, W, y + 2, fill=_mix("#1b1813", ONYX, y / 240), outline="")
 
-        # Big round button straddling the header edge.
-        cx, cy, r = W / 2, 236, 60
-        cv.create_oval(cx - r - 3, cy - r + 3, cx + r + 3, cy + r + 9, fill=_mix(PAGE, DARK, 0.10), outline="")
+        cv.create_text(PAD, 36, text=_spaced("WALLHACK"), anchor="w", fill=GOLD, font=(serif, 15))
+        badge = "LIVE" if running else "READY"
+        bw = 74
         if running:
-            cv.create_oval(cx - r, cy - r, cx + r, cy + r, fill=CARD, outline=RED, width=4, tags="btn")
-            cv.create_text(cx, cy, text="STOP", fill=RED, font=(FONT, 22, "bold"), tags="btn")
+            _round_rect(cv, W - PAD - bw, 24, W - PAD, 48, 12, fill=GOLD)
         else:
-            _gradient_circle(cv, cx, cy, r, RED_LIGHT, RED, "btn")
-            cv.create_text(cx, cy, text="START", fill=CARD, font=(FONT, 22, "bold"), tags="btn")
-        cv.tag_bind("btn", "<Button-1>", toggle)
-        cv.tag_bind("btn", "<Enter>", lambda _: cv.configure(cursor="hand2"))
-        cv.tag_bind("btn", "<Leave>", lambda _: cv.configure(cursor=""))
+            _round_rect(cv, W - PAD - bw, 24, W - PAD, 48, 12, fill="", outline=GOLD_DEEP)
+        cv.create_text(W - PAD - bw / 2, 36, text=_spaced(badge), fill=ONYX if running else GOLD, font=(sans, 9))
 
-        # Source tiles, like the reference's action tiles.
-        y = 322
-        cv.create_text(26, y, text="Source", anchor="w", fill=TEXT, font=(FONT, 14, "bold"))
-        tile_w, gap, top = 104, 18, y + 18
-        for i, ((label, kind), value) in enumerate(zip(TILES, SOURCES, strict=True)):
-            x0 = 24 + i * (tile_w + gap)
-            tag, active = f"tile{i}", source.get() == value
-            _round_rect(cv, x0, top + 4, x0 + tile_w, top + 92, 20, fill=SHADOW, tags=tag)
+        caption(W / 2, 96, "Status", anchor="center")
+        cv.create_text(W / 2, 134, text=ui["title"], fill=IVORY, font=(sans, 40))
+        cv.create_text(W / 2, 180, text=ui["subtitle"], fill=MUTED, font=(sans, 12))
+
+        # The button: oxblood disc in a fine gold ring; outlined in gold while running.
+        cx, cy, r = W / 2, 292, 72
+        cv.create_oval(cx - r - 14, cy - r - 14, cx + r + 14, cy + r + 14, outline=GOLD_DIM, width=1)
+        if running:
+            cv.create_oval(cx - r, cy - r, cx + r, cy + r, fill=PANEL, outline=GOLD, width=1.5, tags="btn")
+            cv.create_text(cx, cy, text=_spaced("STOP"), fill=GOLD, font=(sans, 15, "bold"), tags="btn")
+        else:
+            _gradient_circle(cv, cx, cy, r, OXBLOOD_LIGHT, OXBLOOD, "btn")
+            cv.create_oval(cx - r + 5, cy - r + 5, cx + r - 5, cy + r - 5, outline=OXBLOOD_EDGE, tags="btn")
+            cv.create_text(cx, cy, text=_spaced("START"), fill=IVORY, font=(sans, 15, "bold"), tags="btn")
+        link("btn", toggle)
+
+        # Source: one slim segmented control, the selected segment in champagne.
+        y = 410
+        caption(PAD, y, "Source")
+        top, h = y + 18, 44
+        _round_rect(cv, PAD, top, W - PAD, top + h, 22, fill=PANEL, outline=HAIRLINE)
+        seg = (W - 2 * PAD) / 3
+        for i, (value, label) in enumerate(zip(SOURCES, LABELS, strict=True)):
+            x0, tag, active = PAD + i * seg, f"seg{i}", source.get() == value
+            cv.create_rectangle(x0, top, x0 + seg, top + h, fill="", outline="", tags=tag)
             if active:
-                _gradient_round_rect(cv, x0, top, x0 + tile_w, top + 88, 20, MINT, TEAL, tag)
-            else:
-                _round_rect(cv, x0, top, x0 + tile_w, top + 88, 20, fill=CARD, tags=tag)
-                _round_rect(cv, x0 + 32, top + 14, x0 + 72, top + 54, 12, fill=MINT_SOFT, tags=tag)
-            _glyph(cv, kind, x0 + 52, top + 34, CARD if active else TEAL_TEXT, tag)
+                _gradient_round_rect(cv, x0 + 4, top + 4, x0 + seg - 4, top + h - 4, 18, GOLD_LIGHT, GOLD_DEEP, tag)
             cv.create_text(
-                x0 + 52, top + 70, text=label, fill=CARD if active else TEXT, font=(FONT, 12, "bold"), tags=tag
+                x0 + seg / 2,
+                top + h / 2,
+                text=label,
+                fill=ONYX if active else MUTED,
+                font=(sans, 12, "bold" if active else "normal"),
+                tags=tag,
             )
-            cv.tag_bind(tag, "<Button-1>", lambda _, v=value: source.set(v))
-            cv.tag_bind(tag, "<Enter>", lambda _: cv.configure(cursor="hand2"))
-            cv.tag_bind(tag, "<Leave>", lambda _: cv.configure(cursor=""))
+            link(tag, lambda v=value: source.set(v))
 
-        y = top + 112
+        y = top + h + 34
         if source.get() == SOURCES[1]:
-            card(y, 72, "USB port")
-            cv.create_window(42, y + 48, window=port_entry, anchor="w", width=220)
-            pill(W - 40, y + 44, "Detect", "detect", dark=False)
-            cv.tag_bind("detect", "<Button-1>", lambda _: detect())
-            y += 86
-        card(y, 72, "Your position on the map  ·  x m, y m, facing °")
-        cv.create_window(42, y + 48, window=pos_entry, anchor="w", width=W - 100)
-        y += 86
+            field(y, "USB port", "", port_entry)
+            caption(W - PAD, y + 26, "Detect", anchor="e", color=GOLD, tag="detect")
+            link("detect", detect)
+            y += 68
+        field(y, "Position", "x  ·  y  ·  facing °", pos_entry)
+        y += 72
 
-        card(y, 84, "Session")
-        dot = ERROR if ui["error"] else (MINT if running else "#c4c9ce")
-        cv.create_oval(42, y + 41, 52, y + 51, fill=dot, outline="")
+        cv.create_line(PAD, y, W - PAD, y, fill=DIVIDER)
+        dot = ERROR if ui["error"] else (GOLD if running else FAINT)
+        cv.create_oval(PAD, y + 31, PAD + 8, y + 39, fill=dot, outline="")
         cv.create_text(
-            62,
-            y + 46,
+            PAD + 18,
+            y + 35,
             text=ui["detail"],
             anchor="w",
-            width=W - 210,
-            fill=ERROR if ui["error"] else TEXT,
-            font=(FONT, 13, "bold"),
+            fill=ERROR if ui["error"] else IVORY,
+            font=(sans, 13),
+            width=W - 2 * PAD - 120,
         )
-        cv.create_text(62, y + 66, text=ui["note"], anchor="w", width=W - 210, fill=TEXT2, font=(FONT, 11))
-        pill(W - 40, y + 50, "Open view", "open", dark=running)
-        cv.tag_bind("open", "<Button-1>", lambda _: ctl.running and webbrowser.open(ctl.running.url))
-        cv.configure(height=y + 108)
+        cv.create_text(
+            PAD + 18, y + 56, text=ui["note"], anchor="w", fill=MUTED, font=(sans, 11), width=W - 2 * PAD - 120
+        )
+        cv.create_text(
+            W - PAD,
+            y + 35,
+            text="Open view  \u2192",
+            anchor="e",
+            fill=GOLD if running else FAINT,
+            font=(sans, 12),
+            tags="open",
+        )
+        link("open", lambda: ctl.running and webbrowser.open(ctl.running.url))
+        cv.configure(height=y + 86)
 
     def set_ui(title: str, subtitle: str, detail: str, note: str = "", error: bool = False) -> None:
         ui.update(title=title, subtitle=subtitle, detail=detail, note=note, error=error)
@@ -306,7 +305,7 @@ def main() -> None:
             detect()
         render()
 
-    def toggle(_: object = None) -> None:
+    def toggle() -> None:
         if ctl.running:
             ctl.stop()
             set_ui("Stopped", "Press start to run again", "Not running")
